@@ -1,0 +1,10 @@
+/build/
+/out/
+/.vs/
+/.vscode/
+/.cache/
+CMakeUserPresets.json
+*.mhs
+*.mhv
+*.mhp
+*.user
