@@ -560,11 +560,12 @@ TEST(CliStruct, ShowsTheFieldsAtAnAddressAndFollowsAChain) {
     const auto chains = memhunter({"pointers", pid, "--to", format_address(target.counter), "--depth", "2", "-f", "csv", "--limit", "0",
                                    "-q", "--no-progress"});
     ASSERT_EQ(chains.exit_code, 0u) << chains.err;
-    const auto start = chains.out.find("[[memhunter_test_target.exe+");
-    ASSERT_NE(start, std::string::npos) << chains.out;
-    const auto end = chains.out.find("]+0x10]+0x40,", start);
+    const auto end = chains.out.find("]+0x10]+0x40,");
     ASSERT_NE(end, std::string::npos) << chains.out;
+    const auto start = chains.out.rfind("[[memhunter_test_target.exe+", end);
+    ASSERT_NE(start, std::string::npos) << chains.out;
     const std::string base = chains.out.substr(start, end + 7 - start);
+    ASSERT_EQ(base.find('\n'), std::string::npos) << chains.out;
 
     const std::uint64_t moved = moved_counter(target);
     ASSERT_EQ(target.command("set 77"), "counter 77");
