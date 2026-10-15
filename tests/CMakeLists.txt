@@ -37,9 +37,11 @@ add_executable(memhunter_tests
   test_values.cpp
   test_value_file.cpp
   test_pointers.cpp
+  test_structure.cpp
   test_tui.cpp
   test_gui.cpp
   test_gui_pointers.cpp
+  test_gui_structure.cpp
   test_cli.cpp
 )
 target_link_libraries(memhunter_tests PRIVATE memhunter_test_support memhunter_tui memhunter_gui_model GTest::gtest_main)

@@ -36,6 +36,7 @@ add_executable(memhunter_gui WIN32
   view.cpp
   watch_view.cpp
   pointer_view.cpp
+  struct_view.cpp
   main.cpp
 )
 target_link_libraries(memhunter_gui PRIVATE memhunter_gui_resources memhunter_gui_model memhunter_imgui comdlg32 ole32 shell32)

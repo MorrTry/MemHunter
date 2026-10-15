@@ -14,9 +14,11 @@
 #include "gui/pointer_list.hpp"
 #include "gui/results_table.hpp"
 #include "gui/search.hpp"
+#include "gui/struct_table.hpp"
 #include "gui/value_history.hpp"
 #include "gui/value_table.hpp"
 #include "gui/watch_list.hpp"
+#include "memory/memory_dump.hpp"
 #include "memory/memory_source.hpp"
 #include "pattern/pattern.hpp"
 #include "results/result_set.hpp"
@@ -37,17 +39,6 @@ std::unique_ptr<Target> open_process(std::uint32_t pid);
 
 // A sentence for the user; the details of Windows errors stay in the original English text.
 std::string describe_error(const Error& error);
-
-// Memory around an address as it is now; unreadable bytes are flagged instead of being guessed.
-struct MemoryDump {
-    std::uint64_t address = 0;
-    std::vector<std::byte> bytes;
-    std::vector<std::uint8_t> readable;
-
-    bool all_readable(std::uint64_t begin, std::uint64_t end) const;
-};
-
-MemoryDump read_dump(const MemorySource& memory, std::uint64_t address, std::size_t size);
 
 enum class LiveState : std::uint8_t { Same, Changed, Unreadable };
 
@@ -106,7 +97,7 @@ public:
 
     // Cancels and waits for a running job; the previous results and the remembered memory are dropped. The address
     // list stays for the same process, keeps only its chains for another run of the same program and is emptied
-    // otherwise. The pointer list stays.
+    // otherwise. The structure follows the same rule, and the pointer list stays.
     void attach(std::unique_ptr<Target> target);
     void detach();
     const Target* target() const noexcept { return target_.get(); }
@@ -162,6 +153,21 @@ public:
     // Adds an entry that follows the chain in `row`; false when it is already listed.
     bool add_pointer_watch(std::size_t row);
 
+    // 8, or 4 for a 32-bit target.
+    unsigned pointer_size() const noexcept;
+    StructTable& structure() noexcept { return structure_; }
+    const StructTable& structure() const noexcept { return structure_; }
+    // Reads the structure at once; `known` becomes its first defined field.
+    bool open_structure(PointerPath base, std::uint32_t size, std::optional<std::uint32_t> focus = std::nullopt,
+                        std::optional<StructField> known = std::nullopt);
+    void refresh_structure(StructTable::Clock::time_point now);
+    // Rereads the regions, so that pointers into memory allocated since are recognised, and guesses again.
+    void guess_structure_again();
+    bool add_struct_watch(std::size_t row, std::size_t instance);
+    // Saves the defined fields; there must be at least one.
+    bool save_structure(const std::filesystem::path& path);
+    bool load_structure(const std::filesystem::path& path);
+
     const Notice& notice() const noexcept { return notice_; }
     void set_notice(std::string text, bool error);
 
@@ -171,7 +177,7 @@ private:
     void finish_values(ValueScanResult result, double seconds);
     void finish_pointers(PointerScanResult result, double seconds);
     void finish_check(PointerFilterResult result, double seconds);
-    // Rereads the regions of the target for the address list and the pointer list.
+    // Rereads the regions of the target for the address list, the pointer list and the structure.
     void refresh_modules();
 
     // Declared before job_, so that the job is joined before the memory it reads goes away.
@@ -193,6 +199,7 @@ private:
     PointerSearch pending_search_;
     std::optional<std::uint64_t> pending_address_;
     PointerRun pointer_run_;
+    StructTable structure_;
     double last_seconds_ = 0;
     Notice notice_;
 };

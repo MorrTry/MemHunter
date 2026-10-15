@@ -841,6 +841,56 @@ PointerOptions parse_pointer_options(std::vector<std::string> args) {
     return options;
 }
 
+StructOptions parse_struct_options(std::vector<std::string> args) {
+    StructOptions options;
+    ArgReader reader(std::move(args));
+    std::vector<std::string> positionals;
+    while (!reader.done()) {
+        const auto option = reader.next_option();
+        if (!option) {
+            if (!reader.done()) {
+                positionals.push_back(reader.positional());
+            }
+            continue;
+        }
+        const std::string& o = *option;
+        if (o == "--size") {
+            options.size = static_cast<std::uint32_t>(reader.uint_value(1, kMaxStructSize));
+            options.size_given = true;
+        } else if (o == "--def") {
+            options.definition = reader.value();
+            if (options.definition.empty()) {
+                invalid("--def needs a file name");
+            }
+        } else if (o == "-f" || o == "--format") {
+            options.format = parse_format(reader.value());
+        } else if (o == "-o" || o == "--output") {
+            options.path = reader.value();
+            if (options.path.empty()) {
+                invalid("--output needs a file name");
+            }
+        } else if (o == "-q" || o == "--quiet") {
+            reader.flag();
+            options.quiet = true;
+        } else {
+            reader.unknown();
+        }
+    }
+    if (positionals.size() != 2) {
+        invalid(positionals.empty()     ? "missing target process: give a PID or an executable name"
+                : positionals.size() == 1 ? "missing base: give an address such as 0x1F4A2C3B0D8 or a chain such as [[game.exe+0x52080]+0x8]"
+                                          : "unexpected argument '" + positionals[2] + "'");
+    }
+    options.target = positionals[0];
+    const auto base = parse_pointer_path(positionals[1], 8);
+    if (!base) {
+        invalid("the base is an address such as 0x1F4A2C3B0D8 or a chain such as [[game.exe+0x52080]+0x8], got '" + positionals[1] +
+                "'");
+    }
+    options.base = *base;
+    return options;
+}
+
 ValueCondition parse_value_condition(Compare compare, ValueType type, std::string_view low, std::string_view high) {
     ValueCondition condition;
     condition.compare = compare;

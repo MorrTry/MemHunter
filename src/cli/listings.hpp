@@ -9,6 +9,7 @@
 #include "process/process.hpp"
 #include "results/export.hpp"
 #include "results/result_set.hpp"
+#include "structure/struct_layout.hpp"
 #include "value/value_scan.hpp"
 
 namespace mh::cli {
@@ -50,9 +51,24 @@ struct PointerListing {
     std::vector<PointerRow> rows;
 };
 
+struct StructRow {
+    StructField field;
+    std::string value;
+};
+
+struct StructListing {
+    ProcessSummary process;
+    std::string base;
+    std::uint64_t address = 0;
+    std::uint32_t size = 0;
+    unsigned pointer_size = 8;
+    std::vector<StructRow> rows;
+};
+
 void write_regions(std::ostream& out, OutputFormat format, const ProcessSummary& process, std::span<const Region> regions);
 void write_values(std::ostream& out, OutputFormat format, const ValueListing& listing);
 void write_pointers(std::ostream& out, OutputFormat format, const PointerListing& listing);
+void write_struct(std::ostream& out, OutputFormat format, const StructListing& listing);
 void write_processes(std::ostream& out, OutputFormat format, std::span<const ProcessEntry> processes);
 
 }  // namespace mh::cli

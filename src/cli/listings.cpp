@@ -167,7 +167,56 @@ void write_pointers_csv(std::ostream& out, const PointerListing& listing) {
     }
 }
 
+void write_struct_text(std::ostream& out, const StructListing& listing) {
+    std::size_t offset_width = 8;
+    std::size_t type_width = 6;
+    std::size_t name_width = 6;
+    for (const StructRow& row : listing.rows) {
+        offset_width = std::max(offset_width, format_hex(row.field.offset).size() + 2);
+        type_width = std::max(type_width, field_type_name(row.field).size() + 2);
+        name_width = std::max(name_width, display_width(row.field.name) + 2);
+    }
+    out << fit_width("OFFSET", offset_width) << fit_width("TYPE", type_width) << fit_width("NAME", name_width) << "VALUE\n";
+    for (const StructRow& row : listing.rows) {
+        out << fit_width(format_hex(row.field.offset), offset_width) << fit_width(field_type_name(row.field), type_width)
+            << fit_width(row.field.name, name_width) << row.value << '\n';
+    }
+}
+
+void write_struct_json(std::ostream& out, const StructListing& listing) {
+    const ProcessSummary& process = listing.process;
+    out << "{\n  \"process\": {\"pid\": " << process.pid << ", \"name\": \"" << json_escape(process.name) << "\", \"path\": \""
+        << json_escape(process.path) << "\", \"wow64\": " << (process.wow64 ? "true" : "false") << "},\n  \"base\": \""
+        << json_escape(listing.base) << "\",\n  \"address\": \"" << format_address(listing.address) << "\",\n  \"size\": \""
+        << format_hex(listing.size) << "\",\n  \"fields\": [";
+    bool first = true;
+    for (const StructRow& row : listing.rows) {
+        out << (first ? "\n" : ",\n") << "    {\"offset\": \"" << format_hex(row.field.offset) << "\", \"address\": \""
+            << format_address(listing.address + row.field.offset) << "\", \"type\": \"" << field_type_name(row.field)
+            << "\", \"size\": " << row.field.size(listing.pointer_size) << ", \"name\": \"" << json_escape(row.field.name)
+            << "\", \"defined\": " << (row.field.defined ? "true" : "false") << ", \"value\": \"" << json_escape(row.value) << "\"}";
+        first = false;
+    }
+    out << (first ? "]\n}\n" : "\n  ]\n}\n");
+}
+
+void write_struct_csv(std::ostream& out, const StructListing& listing) {
+    out << "offset,type,name,value\r\n";
+    for (const StructRow& row : listing.rows) {
+        out << format_hex(row.field.offset) << ',' << field_type_name(row.field) << ',' << csv_field(row.field.name) << ','
+            << csv_field(row.value) << "\r\n";
+    }
+}
+
 }  // namespace
+
+void write_struct(std::ostream& out, OutputFormat format, const StructListing& listing) {
+    switch (format) {
+        case OutputFormat::Text: write_struct_text(out, listing); break;
+        case OutputFormat::Json: write_struct_json(out, listing); break;
+        case OutputFormat::Csv: write_struct_csv(out, listing); break;
+    }
+}
 
 void write_pointers(std::ostream& out, OutputFormat format, const PointerListing& listing) {
     switch (format) {

@@ -66,7 +66,7 @@ public:
     // The selection stays on the same row, or on the last one when the last row goes.
     void remove(std::size_t row);
     void clear();
-    // Drops the entries without a chain, which mean nothing in another run of the program.
+    // Drops the entries without a chain from a module, which mean nothing in another run of the program.
     void keep_paths();
     void set_type(std::size_t row, WatchType type, std::uint32_t length);
     void set_description(std::size_t row, std::string description);

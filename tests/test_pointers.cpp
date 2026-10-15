@@ -275,6 +275,36 @@ TEST(PointerFormat, ShowsBaseAndOffsets) {
     EXPECT_EQ(format_pointer_offsets(path.offsets), "0x10, 0x8");
     EXPECT_EQ(format_pointer_path(path), "[[game.exe+0x1A2B0]+0x10]+0x8");
     EXPECT_EQ(format_pointer_path({"game.exe", 0x40, {}, 8}), "game.exe+0x40");
+    EXPECT_EQ(format_pointer_path({"", 0x1F4A2C3B0D8, {0x8}, 8}), "[0x1F4A2C3B0D8]+0x8");
+}
+
+TEST(PointerFormat, ParsesWhatItShows) {
+    const PointerPath path{"game.exe", 0x1A2B0, {0x10, 0x8}, 8};
+    EXPECT_EQ(parse_pointer_path(format_pointer_path(path), 8), path);
+    EXPECT_EQ(parse_pointer_path(" [ [ Game.EXE + 1a2b0 ] + 10 ] + 0x8 ", 4), (PointerPath{"Game.EXE", 0x1A2B0, {0x10, 0x8}, 4}));
+    EXPECT_EQ(parse_pointer_path("[[game.exe+0x52080]+0x8]", 8), (PointerPath{"game.exe", 0x52080, {0x8, 0}, 8}));
+    EXPECT_EQ(parse_pointer_path("[[game.exe+0x52080]]+0x50", 8), (PointerPath{"game.exe", 0x52080, {0, 0x50}, 8}));
+    EXPECT_EQ(parse_pointer_path("game.exe+0x40", 8), (PointerPath{"game.exe", 0x40, {}, 8}));
+    EXPECT_EQ(parse_pointer_path("game.exe", 8), (PointerPath{"game.exe", 0, {}, 8}));
+    EXPECT_EQ(parse_pointer_path("my game.dll+4", 8), (PointerPath{"my game.dll", 4, {}, 8}));
+    EXPECT_EQ(parse_pointer_path("0x1F4A2C3B0D8", 8), (PointerPath{"", 0x1F4A2C3B0D8, {}, 8}));
+    EXPECT_EQ(parse_pointer_path("[1F4A2C3B0D8]+8", 8), (PointerPath{"", 0x1F4A2C3B0D8, {0x8}, 8}));
+    EXPECT_EQ(parse_pointer_path("[0x100+0x20]", 8), (PointerPath{"", 0x120, {0}, 8}));
+
+    for (const char* bad : {"", "[", "[game.exe+0x10", "game.exe+0x10]", "[[game.exe]+0x10", "game.exe+", "game.exe+0xZZ",
+                            "[game.exe]+0x100000000", "[game.exe]+0x10 junk", "[game.exe]-0x10", "+0x10", "0x1+0x2+0x3"}) {
+        EXPECT_EQ(parse_pointer_path(bad, 8), std::nullopt) << bad;
+    }
+    const auto nested = [](std::size_t depth) { return std::string(depth, '[') + "game.exe" + std::string(depth, ']'); };
+    EXPECT_EQ(parse_pointer_path(nested(kMaxPathOffsets), 8)->offsets.size(), kMaxPathOffsets);
+    EXPECT_EQ(parse_pointer_path(nested(kMaxPathOffsets + 1), 8), std::nullopt);
+}
+
+TEST_F(PointerPaths, AnAbsoluteBaseNeedsNoModule) {
+    kLayout.build(memory);
+    const ModuleMap modules(memory.query_regions());
+    EXPECT_EQ(resolve_pointer_path(memory, modules, {"", kLayout.s1(), {0x20, 0x30}, 8}), kLayout.target());
+    EXPECT_EQ(resolve_pointer_path(memory, modules, {"", kLayout.target(), {}, 8}), kLayout.target());
 }
 
 // The same objects after a restart: other module and heap bases, and S2 no longer set.

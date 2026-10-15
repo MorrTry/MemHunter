@@ -12,6 +12,7 @@
 #include "pointer/pointer_file.hpp"
 #include "process/process.hpp"
 #include "results/export.hpp"
+#include "structure/struct_file.hpp"
 
 namespace mh::gui {
 
@@ -61,32 +62,6 @@ std::string describe_error(const Error& error) {
         case ErrorCode::SystemError: return std::string("Ошибка Windows: ") + error.what();
         default: return error.what();
     }
-}
-
-bool MemoryDump::all_readable(std::uint64_t begin, std::uint64_t end) const {
-    if (begin < address || end > address + bytes.size() || begin > end) {
-        return false;
-    }
-    return std::all_of(readable.begin() + static_cast<std::ptrdiff_t>(begin - address),
-                       readable.begin() + static_cast<std::ptrdiff_t>(end - address), [](std::uint8_t r) { return r != 0; });
-}
-
-MemoryDump read_dump(const MemorySource& memory, std::uint64_t address, std::size_t size) {
-    MemoryDump dump;
-    dump.address = address;
-    size = static_cast<std::size_t>(std::min<std::uint64_t>(size, ~std::uint64_t{0} - address));
-    dump.bytes.assign(size, std::byte{0});
-    dump.readable.assign(size, 0);
-    const std::uint64_t page = std::max<std::size_t>(memory.page_size(), 1);
-    std::size_t offset = 0;
-    while (offset < size) {
-        const std::uint64_t at = address + offset;
-        const std::size_t piece = static_cast<std::size_t>(std::min<std::uint64_t>(size - offset, page - at % page));
-        const ReadResult read = memory.read(at, std::span(dump.bytes).subspan(offset, piece));
-        std::fill_n(dump.readable.begin() + static_cast<std::ptrdiff_t>(offset), std::min(read.bytes, piece), std::uint8_t{1});
-        offset += piece;
-    }
-    return dump;
 }
 
 LiveState live_state(const ResultSet& results, std::span<const Pattern> patterns, const Match& match, const MemoryDump& dump) {
@@ -271,14 +246,17 @@ void Session::attach(std::unique_ptr<Target> target) {
     stop_job();
     if (!target_ || !target) {
         watch_ = WatchList{};
+        structure_.close();
     } else {
         const ProcessSummary& before = target_->summary();
         const ProcessSummary& after = target->summary();
         if (before.pid != after.pid || before.creation_time != after.creation_time) {
             if (iequals_ascii(before.name, after.name)) {
                 watch_.keep_paths();
+                structure_.restart();
             } else {
                 watch_ = WatchList{};
+                structure_.close();
             }
         }
     }
@@ -579,6 +557,7 @@ void Session::refresh_modules() {
     try {
         std::vector<Region> regions = target_->memory().query_regions();
         pointers_.set_modules(ModuleMap(regions));
+        structure_.set_regions(regions);
         watch_.set_regions(std::move(regions));
     } catch (const Error&) {
         // The process is exiting; the lists keep the modules read before.
@@ -617,8 +596,7 @@ bool Session::start_pointer_scan(std::size_t watch_row, unsigned depth, std::uin
     pending_search_.depth = depth;
     pending_search_.max_offset = max_offset;
     notice_ = {};
-    const unsigned pointer_size = target_->summary().wow64 ? 4 : 8;
-    job_ = std::make_unique<Job>(JobKind::PointerScan, pointer_scan_work(target_->memory(), entry.address, pointer_size, options));
+    job_ = std::make_unique<Job>(JobKind::PointerScan, pointer_scan_work(target_->memory(), entry.address, pointer_size(), options));
     return true;
 }
 
@@ -798,6 +776,106 @@ bool Session::add_pointer_watch(std::size_t row) {
     const bool added = watch_.add(std::move(entry));
     set_notice("Цепочка " + pointers_.path_text(row) + (added ? " добавлена в список адресов" : " уже в списке адресов"), false);
     return added;
+}
+
+unsigned Session::pointer_size() const noexcept {
+    return target_ && target_->summary().wow64 ? 4 : 8;
+}
+
+bool Session::open_structure(PointerPath base, std::uint32_t size, std::optional<std::uint32_t> focus, std::optional<StructField> known) {
+    if (!target_) {
+        set_notice("Сначала выберите процесс", true);
+        return false;
+    }
+    base.pointer_size = pointer_size();
+    refresh_modules();
+    structure_.open(std::move(base), size, focus);
+    if (known) {
+        structure_.set_definition({structure_.size(), {*known}});
+    }
+    refresh_structure(StructTable::Clock::now());
+    const std::string text = format_struct_base(structure_.base());
+    if (const auto at = structure_.address(0)) {
+        set_notice("Структура " + text + (structure_.base().module.empty() && structure_.base().offsets.empty() ? "" : " в " + format_address(*at)),
+                   false);
+    } else {
+        set_notice("Цепочка " + text + " сейчас никуда не ведёт; структура прочитается, когда цепочка найдётся", true);
+    }
+    return true;
+}
+
+void Session::refresh_structure(StructTable::Clock::time_point now) {
+    if (target_ && structure_.active()) {
+        structure_.refresh(target_->memory(), now);
+    }
+}
+
+void Session::guess_structure_again() {
+    if (!target_ || !structure_.active()) {
+        return;
+    }
+    refresh_modules();
+    refresh_structure(StructTable::Clock::now());
+    structure_.guess_again();
+    set_notice("Типы полей угаданы заново; заданные поля остались", false);
+}
+
+bool Session::add_struct_watch(std::size_t row, std::size_t instance) {
+    if (!target_) {
+        set_notice("Сначала выберите процесс", true);
+        return false;
+    }
+    if (row >= structure_.rows().size() || instance >= structure_.instances()) {
+        return false;
+    }
+    const std::string text = structure_.path_text(row, instance);
+    refresh_modules();
+    const bool added = watch_.add(structure_.watch_entry(row, instance));
+    set_notice("Поле " + text + (added ? " добавлено в список адресов" : " уже в списке адресов"), false);
+    return added;
+}
+
+bool Session::save_structure(const std::filesystem::path& path) {
+    if (!structure_.active()) {
+        set_notice("Структура не открыта", true);
+        return false;
+    }
+    const StructDefinition definition = structure_.definition();
+    if (definition.fields.empty()) {
+        set_notice("Ни одно поле не задано: задайте полю тип или имя, тогда его можно сохранить", true);
+        return false;
+    }
+    try {
+        write_struct_file(path, definition);
+        set_notice("Сохранено полей: " + std::to_string(definition.fields.size()) + " в " + wide_to_utf8(path.filename().wstring()), false);
+        return true;
+    } catch (const Error& error) {
+        set_notice(describe_error(error), true);
+        return false;
+    }
+}
+
+bool Session::load_structure(const std::filesystem::path& path) {
+    if (!structure_.active()) {
+        set_notice("Сначала откройте структуру, потом загрузите её поля", true);
+        return false;
+    }
+    StructDefinition definition;
+    try {
+        definition = read_struct_file(path, structure_.pointer_size());
+    } catch (const Error& error) {
+        if (error.code() == ErrorCode::CorruptSnapshot) {
+            set_notice(std::string("Ошибка в файле структуры: ") + error.what(), true);
+        } else {
+            set_notice(describe_error(error), true);
+        }
+        return false;
+    }
+    const std::size_t count = definition.fields.size();
+    structure_.set_definition(std::move(definition));
+    refresh_structure(StructTable::Clock::now());
+    set_notice("Загружено полей: " + std::to_string(count) + " из " + wide_to_utf8(path.filename().wstring()), false);
+    return true;
 }
 
 }  // namespace mh::gui

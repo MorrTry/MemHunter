@@ -545,6 +545,91 @@ TEST_F(Cli, PointerArgumentsAndFiles) {
     EXPECT_NE(memhunter({"help"}).out.find("memhunter pointers <pid|name>"), std::string::npos);
 }
 
+TEST(CliStruct, ShowsTheFieldsAtAnAddressAndFollowsAChain) {
+    testing::TargetProcess target = testing::start_target(MEMHUNTER_TEST_TARGET);
+    const std::string pid = std::to_string(target.pid);
+    const auto directory = std::filesystem::temp_directory_path() / ("memhunter-cli-struct-" + std::to_string(GetCurrentProcessId()));
+    std::filesystem::create_directories(directory);
+    ASSERT_EQ(target.command("set 41"), "counter 41");
+
+    const auto plain = memhunter({"struct", pid, format_address(target.counter - 0x40), "--size", "0x80", "-f", "csv"});
+    ASSERT_EQ(plain.exit_code, 0u) << plain.err;
+    EXPECT_EQ(plain.out, "offset,type,name,value\r\n0x0,bytes[64],,00 \xC3\x97 64\r\n0x40,int32,,41\r\n0x44,bytes[60],,00 \xC3\x97 60\r\n");
+    EXPECT_NE(plain.err.find(": 0x80 bytes, 3 fields"), std::string::npos) << plain.err;
+
+    const auto chains = memhunter({"pointers", pid, "--to", format_address(target.counter), "--depth", "2", "-f", "csv", "--limit", "0",
+                                   "-q", "--no-progress"});
+    ASSERT_EQ(chains.exit_code, 0u) << chains.err;
+    const auto start = chains.out.find("[[memhunter_test_target.exe+");
+    ASSERT_NE(start, std::string::npos) << chains.out;
+    const auto end = chains.out.find("]+0x10]+0x40,", start);
+    ASSERT_NE(end, std::string::npos) << chains.out;
+    const std::string base = chains.out.substr(start, end + 7 - start);
+
+    const std::uint64_t moved = moved_counter(target);
+    ASSERT_EQ(target.command("set 77"), "counter 77");
+    const std::string definition = utf8(directory / "counter.mhst");
+    std::ofstream(directory / "counter.mhst") << "# the page of the counter\nsize 0x48\n0x40 int32 counter\n";
+    const auto followed = memhunter({"struct", pid, base, "--def", definition, "-f", "json"});
+    ASSERT_EQ(followed.exit_code, 0u) << followed.err;
+    EXPECT_NE(followed.out.find("\"base\": \"" + base + "\""), std::string::npos) << followed.out;
+    EXPECT_NE(followed.out.find("\"address\": \"" + format_address(moved - 0x40) + "\""), std::string::npos) << followed.out;
+    EXPECT_NE(followed.out.find("\"size\": \"0x48\""), std::string::npos) << followed.out;
+    EXPECT_NE(followed.out.find("{\"offset\": \"0x40\", \"address\": \"" + format_address(moved) +
+                                "\", \"type\": \"int32\", \"size\": 4, \"name\": \"counter\", \"defined\": true, \"value\": \"77\"}"),
+              std::string::npos)
+        << followed.out;
+    EXPECT_NE(followed.err.find(base + " leads to " + format_address(moved - 0x40) + ": 0x48 bytes, 3 fields, 1 of them from"),
+              std::string::npos)
+        << followed.err;
+
+    const auto text = memhunter({"struct", pid, base, "--def", definition, "--size", "0x44", "-q"});
+    ASSERT_EQ(text.exit_code, 0u) << text.err;
+    EXPECT_EQ(text.out.rfind("OFFSET  TYPE       NAME     VALUE\n", 0), 0u) << text.out;
+    EXPECT_NE(text.out.find("\n0x40    int32      counter  77\n"), std::string::npos) << text.out;
+    EXPECT_TRUE(text.err.empty()) << text.err;
+
+    const auto nowhere = memhunter({"struct", pid, "[[no-such-module.dll+0x10]+0x8]"});
+    EXPECT_EQ(nowhere.exit_code, 1u);
+    EXPECT_NE(nowhere.err.find("leads nowhere now"), std::string::npos) << nowhere.err;
+    const auto unreadable = memhunter({"struct", pid, "0x10"});
+    EXPECT_EQ(unreadable.exit_code, 1u);
+    EXPECT_NE(unreadable.err.find("Nothing can be read at"), std::string::npos) << unreadable.err;
+
+    for (const std::vector<std::string>& args : std::vector<std::vector<std::string>>{
+             {"struct"},
+             {"struct", pid},
+             {"struct", pid, "[[x"},
+             {"struct", pid, "0x1000", "other"},
+             {"struct", pid, "0x1000", "--size", "0"},
+             {"struct", pid, "0x1000", "--size", "0x10001"},
+             {"struct", pid, "0x1000", "-f", "xml"},
+             {"struct", pid, "0x1000", "--def", ""},
+             {"struct", pid, "0x1000", "--bogus"},
+         }) {
+        const auto result = memhunter(args);
+        EXPECT_EQ(result.exit_code, 2u) << args.back() << ": " << result.err;
+        EXPECT_NE(result.err.find("memhunter: "), std::string::npos) << result.err;
+    }
+    EXPECT_EQ(memhunter({"struct", "4294967280", "0x1000"}).exit_code, 3u);
+    EXPECT_EQ(memhunter({"struct", pid, "0x1000", "--def", utf8(directory / "missing.mhst")}).exit_code, 4u);
+    std::ofstream(directory / "damaged.mhst") << "0x40 int33 counter\n";
+    const auto damaged = memhunter({"struct", pid, "0x1000", "--def", utf8(directory / "damaged.mhst")});
+    EXPECT_EQ(damaged.exit_code, 6u);
+    EXPECT_NE(damaged.err.find("line 1"), std::string::npos) << damaged.err;
+
+    const auto help = memhunter({"help", "struct"});
+    EXPECT_EQ(help.exit_code, 0u);
+    EXPECT_EQ(help.out.rfind("Usage: memhunter struct", 0), 0u) << help.out;
+    EXPECT_EQ(memhunter({"struct", "--help"}).out, help.out);
+    EXPECT_NE(memhunter({"help"}).out.find("memhunter struct <pid|name> BASE"), std::string::npos);
+
+    target.child->write_line("exit");
+    EXPECT_EQ(target.child->wait(10000), 0u);
+    std::error_code ignored;
+    std::filesystem::remove_all(directory, ignored);
+}
+
 TEST(CliSnapshot, LiveDiffAndIncrementalRescan) {
     testing::TargetProcess target = testing::start_target(MEMHUNTER_TEST_TARGET);
     testing::TargetProcess other = testing::start_target(MEMHUNTER_TEST_TARGET);

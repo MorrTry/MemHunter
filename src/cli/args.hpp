@@ -12,6 +12,7 @@
 #include "results/query.hpp"
 #include "snapshot/capture.hpp"
 #include "snapshot/diff_export.hpp"
+#include "structure/struct_layout.hpp"
 #include "value/value_scan.hpp"
 
 namespace mh::cli {
@@ -155,6 +156,19 @@ struct PointerOptions {
     bool quiet = false;
 };
 
+// The structure at an address or at the end of a chain: the fields of a definition file and guesses between them.
+struct StructOptions {
+    std::string target;
+    // Parsed with 8-byte pointers; the command sets the pointer size of the process.
+    PointerPath base;
+    std::uint32_t size = kDefaultStructSize;
+    bool size_given = false;
+    std::string definition;
+    OutputFormat format = OutputFormat::Text;
+    std::string path;
+    bool quiet = false;
+};
+
 struct PsOptions {
     std::string filter;
     OutputFormat format = OutputFormat::Text;
@@ -169,6 +183,7 @@ InfoOptions parse_info_options(std::vector<std::string> args);
 TuiOptions parse_tui_options(std::vector<std::string> args);
 ValueOptions parse_value_options(std::vector<std::string> args);
 PointerOptions parse_pointer_options(std::vector<std::string> args);
+StructOptions parse_struct_options(std::vector<std::string> args);
 
 // The condition for values of `type`. Integers: decimal or 0x-hex; = accepts the signed and the unsigned range of
 // the type, the ordered comparisons the signed one. Floats: = matches within half of the last digit typed ("100"

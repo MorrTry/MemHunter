@@ -5,6 +5,7 @@ add_library(memhunter_core STATIC
   memory/region.cpp
   memory/process_memory.cpp
   memory/segmented_read.cpp
+  memory/memory_dump.cpp
   pattern/pattern.cpp
   scanner/anchor.cpp
   scanner/naive_matcher.cpp
@@ -31,6 +32,8 @@ add_library(memhunter_core STATIC
   pointer/pointer_chain.cpp
   pointer/pointer_scan.cpp
   pointer/pointer_file.cpp
+  structure/struct_layout.cpp
+  structure/struct_file.cpp
 )
 target_include_directories(memhunter_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(memhunter_core PUBLIC memhunter_options psapi)
@@ -54,6 +57,7 @@ add_library(memhunter_gui_model STATIC
   gui/value_history.cpp
   gui/watch_list.cpp
   gui/pointer_list.cpp
+  gui/struct_table.cpp
   gui/process_picker.cpp
   gui/job.cpp
   gui/session.cpp

@@ -15,6 +15,7 @@
 #include "cli/args.hpp"
 #include "cli/listings.hpp"
 #include "common/text.hpp"
+#include "memory/memory_dump.hpp"
 #include "memory/process_memory.hpp"
 #include "pointer/pointer_file.hpp"
 #include "pointer/pointer_scan.hpp"
@@ -23,6 +24,7 @@
 #include "snapshot/diff.hpp"
 #include "snapshot/diff_export.hpp"
 #include "snapshot/snapshot_file.hpp"
+#include "structure/struct_file.hpp"
 #include "tui/app.hpp"
 #include "value/value_file.hpp"
 #include "value/value_scan.hpp"
@@ -47,6 +49,7 @@ Usage:
   memhunter value FILE --decreased         narrow the saved addresses down with the next scan
   memhunter pointers <pid|name> --to ADDR  find chains of pointers that lead to an address
   memhunter pointers FILE --to ADDR        keep the saved chains that lead to the address after a restart
+  memhunter struct <pid|name> BASE         show the fields of the structure at an address or a chain
   memhunter tui <pid|name>                 full-screen interface: scan, browse, filter and save results
   memhunter help [command]                 show help for a command
   memhunter --version
@@ -63,7 +66,7 @@ Exit codes:
   0  matches found (or command succeeded)     1  scan completed without matches
   2  invalid arguments or pattern             3  process not found, access denied or exited
   4  file error                               5  scan interrupted or target exited; partial results written
-  6  damaged or foreign snapshot/value/pointer file   9  internal error
+  6  damaged or foreign snapshot, value, pointer or structure file    9  internal error
 
 MemHunter only reads memory of processes the current user can open with PROCESS_VM_READ. It never
 elevates privileges, injects code or touches guard pages.
@@ -298,6 +301,30 @@ MemHunter only reads memory: it does not write values or freeze them.
 Exit codes: 0 chains found or left, 1 none (FILE is not changed), 2 invalid arguments, 3 process not found
 or access denied, 4 file error, 5 interrupted, target exited or the search outgrew its memory budget (a
 third of the free RAM; nothing is saved), 6 FILE damaged or saved from a process of the other bitness.
+)";
+
+constexpr std::string_view kStructHelp = R"(Usage: memhunter struct <pid|name> BASE [options]
+
+Shows the structure that starts at BASE field by field: offset, type, name and value, like the structure
+page of memhunter_gui. BASE is an address or a chain of pointers to the structure (numbers are hex):
+  memhunter struct game.exe 0x1F4A2C3B0D8
+  memhunter struct game.exe "[[game.exe+0x52080]+0x8]" --def player.mhst
+A chain is followed anew on every run, so it finds the structure again after the program restarts. Types
+are guessed from the bytes: pointers into readable memory, ASCII and UTF-16 text, runs of zeros (one row
+each), doubles, floats and int32; int64 is never guessed.
+
+      --size N              bytes to show, 1 to 0x10000 (default 0x200)
+      --def FILE            fields from a definition file, one per line: "0x50 int32 health" (the GUI
+                            saves them); the fields between them are guessed
+  -f, --format FMT          text (default), json or csv
+  -o, --output FILE         write the fields to FILE instead of standard output
+  -q, --quiet               do not print the summary on stderr
+Types: int8, int16, int32, int64, float, double, pointer, ascii[N], utf16[N], bytes[N]. A pointer shows
+module+offset when it points into a module. ?? marks bytes that cannot be read.
+MemHunter only reads memory: it does not write values or freeze them.
+
+Exit codes: 0 shown, 1 the chain leads nowhere or nothing can be read there, 2 invalid arguments,
+3 process not found or access denied, 4 file error, 6 damaged definition file.
 )";
 
 template <typename Writer>
@@ -1273,6 +1300,64 @@ int pointers_command(std::vector<std::string> args, const ConsoleSession& consol
                                            : search_pointers_command(options, progress_enabled);
 }
 
+int struct_command(std::vector<std::string> args) {
+    StructOptions options = parse_struct_options(std::move(args));
+    const Process process = Process::open(resolve_process(options.target));
+    const ProcessSummary summary = summarize(process);
+    const unsigned pointer_size = summary.wow64 ? 4 : 8;
+    options.base.pointer_size = pointer_size;
+    StructDefinition definition;
+    if (!options.definition.empty()) {
+        definition = read_struct_file(std::filesystem::path(utf8_to_wide(options.definition)), pointer_size);
+    }
+    std::uint32_t size = options.size_given ? options.size : definition.size;
+    for (const StructField& field : definition.fields) {
+        size = std::max(size, field.end(pointer_size));
+    }
+
+    const ProcessMemory memory(process);
+    const std::vector<Region> regions = memory.query_regions();
+    const ModuleMap modules(regions);
+    const std::string base = format_struct_base(options.base);
+    const bool chain = !options.base.module.empty() || !options.base.offsets.empty();
+    const auto address = resolve_pointer_path(memory, modules, options.base);
+    if (!address) {
+        if (!options.quiet) {
+            std::cerr << base << " leads nowhere now: its module is not loaded or a pointer on the way cannot be read\n";
+        }
+        return kExitNoMatches;
+    }
+    const MemoryDump dump = read_dump(memory, *address, size);
+    if (!dump.any_readable()) {
+        if (!options.quiet) {
+            std::cerr << "Nothing can be read at " << format_address(*address) << (chain ? ", where " + base + " leads now" : "") << '\n';
+        }
+        return kExitNoMatches;
+    }
+
+    StructListing listing;
+    listing.process = summary;
+    listing.base = base;
+    listing.address = *address;
+    listing.size = size;
+    listing.pointer_size = pointer_size;
+    for (StructField& field : layout_struct(definition.fields, dump, size, PointerTargets(regions), pointer_size)) {
+        std::string value = format_field_value(field, dump, modules, pointer_size);
+        listing.rows.push_back({std::move(field), std::move(value)});
+    }
+    emit(options.path, [&](std::ostream& out) { write_struct(out, options.format, listing); });
+    if (!options.quiet) {
+        const auto defined = std::count_if(listing.rows.begin(), listing.rows.end(), [](const StructRow& row) { return row.field.defined; });
+        std::cerr << (chain ? base + " leads to " + format_address(*address) : base) << ": " << format_hex(size) << " bytes, "
+                  << listing.rows.size() << " fields";
+        if (!options.definition.empty()) {
+            std::cerr << ", " << defined << " of them from '" << options.definition << "'";
+        }
+        std::cerr << '\n';
+    }
+    return kExitSuccess;
+}
+
 int info_command(std::vector<std::string> args) {
     const InfoOptions options = parse_info_options(std::move(args));
     const SnapshotFile file(options.path);
@@ -1303,6 +1388,8 @@ int help_command(const std::vector<std::string>& args) {
         std::cout << kValueHelp;
     } else if (topic == "pointers") {
         std::cout << kPointersHelp;
+    } else if (topic == "struct") {
+        std::cout << kStructHelp;
     } else {
         throw Error(ErrorCode::InvalidArgument, "no help for unknown command '" + topic + "'");
     }
@@ -1379,6 +1466,9 @@ int run(const std::vector<std::string>& args, const ConsoleSession& console) {
     }
     if (command == "pointers") {
         return pointers_command(std::move(rest), console);
+    }
+    if (command == "struct") {
+        return struct_command(std::move(rest));
     }
     if (command == "tui") {
         return tui_command(std::move(rest));

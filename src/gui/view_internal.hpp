@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <chrono>
+#include <initializer_list>
 #include <string_view>
 
 // Pieces shared by the files that implement View.
@@ -15,6 +16,8 @@ inline constexpr ImGuiWindowFlags kDialog =
 inline constexpr auto kLiveRefresh = std::chrono::milliseconds(500);
 
 float button_width(const char* label);
+// A row of buttons with the usual spacing between them.
+float buttons_width(std::initializer_list<const char*> labels);
 float font_text_width(ImFont* font, std::string_view text);
 // Text on a white block, in the flow of a line.
 void inverted_text(std::string_view text);

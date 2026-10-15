@@ -55,7 +55,10 @@ struct PointerChains {
     std::vector<PointerChain> chains;
 };
 
-// One chain on its own, as an entry of the address list keeps it.
+// The most pointers a path written by hand may follow.
+inline constexpr std::size_t kMaxPathOffsets = 16;
+
+// One chain on its own, as an entry of the address list keeps it. Without a module the base offset is an address.
 struct PointerPath {
     std::string module;
     std::uint64_t base_offset = 0;
@@ -73,6 +76,9 @@ std::string format_pointer_base(std::string_view module, std::uint64_t offset);
 std::string format_pointer_offsets(std::span<const std::uint32_t> offsets);
 // "[[game.exe+0x1A2B0]+0x10]+0x8".
 std::string format_pointer_path(const PointerPath& path);
+// The inverse of format_pointer_path. Numbers are hexadecimal with or without 0x; "]" without an offset adds 0; a base
+// that is only a number is an address. Spaces around the parts are ignored.
+std::optional<PointerPath> parse_pointer_path(std::string_view text, unsigned pointer_size);
 
 // The base of each module in `names`; 0 for one that is not loaded.
 std::vector<std::uint64_t> module_bases(const ModuleMap& modules, std::span<const std::string> names);

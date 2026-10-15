@@ -52,7 +52,7 @@ void text(std::string_view text);
 // An inverted block for messages that must not be missed.
 void inverted_block(std::string_view text);
 
-// "Label   value" with the value starting at `value_x` from the left edge of the content.
+// "Label   value" with the value starting at `value_x` from the left edge of the content and wrapped at its right edge.
 void field(const char* label, std::string_view value, float value_x, ImFont* value_font = nullptr);
 
 }  // namespace mh::gui::ui

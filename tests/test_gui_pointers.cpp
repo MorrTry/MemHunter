@@ -130,6 +130,7 @@ TEST(GuiWatchPaths, ChangingTheTypeAndKeepingChainsKeepThePath) {
     list.add(make_watch_entry(0x1000, WatchType::Int32, 0, "plain"));
     list.add(path_entry(long_path(), "health"));
     list.add(make_watch_entry(0x2000, WatchType::Int8));
+    list.add(path_entry({"", 0x1F4A2C3B0D8, {0x8, 0x50}, 8}, "absolute"));
     list.set_type(1, WatchType::Float, 0);
     ASSERT_TRUE(list.rows()[1].path);
     list.keep_paths();

@@ -20,8 +20,8 @@
 
 namespace mh::gui {
 
-// Exported results, or saved chains of pointers.
-enum class FileKind : std::uint8_t { Export, Pointers };
+// Exported results, saved chains of pointers, or the fields of a structure.
+enum class FileKind : std::uint8_t { Export, Pointers, Structure };
 
 // What the view needs from the window it is drawn in.
 class Platform {
@@ -33,7 +33,7 @@ public:
     virtual void set_title(const std::string& title) = 0;
 };
 
-enum class Page : std::uint8_t { Results, Regions, Watch, Pointers };
+enum class Page : std::uint8_t { Results, Regions, Watch, Pointers, Structure };
 
 // Draws the whole window once per frame and turns clicks and shortcuts into Session calls. All presentation
 // lives here and in theme/widgets; scanning stays in Session.
@@ -118,6 +118,22 @@ private:
     void draw_pointer_check();
     void draw_clear_pointers();
 
+    // The fields of a structure; drawn in struct_view.cpp.
+    void open_struct_from_selection();
+    void open_struct_dialog(std::optional<StructStart> start, std::optional<StructField> known = std::nullopt);
+    void open_field_dialog(std::optional<std::size_t> row);
+    void open_instance_dialog();
+    void save_structure();
+    void load_structure();
+    void copy_struct_field(std::size_t row);
+    void handle_struct_shortcuts(bool copy);
+    void draw_struct_bar(float right_edge);
+    void draw_struct_table(float height);
+    void draw_struct_info(std::size_t row, float value_x);
+    void draw_struct_open();
+    void draw_struct_field();
+    void draw_struct_instance();
+
     Session& session_;
     Platform& platform_;
     const theme::Fonts& fonts_;
@@ -179,6 +195,25 @@ private:
     std::string pointer_offset_ = "0x1000";
     std::string pointer_error_;
     PointerCheckForm check_form_;
+
+    bool struct_open_requested_ = false;
+    bool struct_field_requested_ = false;
+    bool struct_instance_requested_ = false;
+    bool struct_focus_ = false;
+    std::string struct_error_;
+    std::string struct_base_;
+    std::string struct_size_;
+    // The focus and the known field apply while the base is the one suggested.
+    std::string struct_suggested_base_;
+    std::optional<std::uint32_t> struct_focus_offset_;
+    std::optional<StructField> struct_known_;
+    std::string field_offset_;
+    FieldType field_type_ = FieldType::Int32;
+    int field_length_ = 16;
+    std::string field_name_;
+    std::string instance_base_;
+    std::string struct_resize_;
+    bool struct_resizing_ = false;
 };
 
 }  // namespace mh::gui

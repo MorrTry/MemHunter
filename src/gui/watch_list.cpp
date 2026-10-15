@@ -209,7 +209,7 @@ void WatchList::clear() {
 void WatchList::keep_paths() {
     std::vector<WatchEntry> kept;
     for (WatchEntry& entry : entries_) {
-        if (entry.path) {
+        if (entry.path && !entry.path->module.empty()) {
             kept.push_back(std::move(entry));
         }
     }

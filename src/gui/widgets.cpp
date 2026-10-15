@@ -150,7 +150,9 @@ void field(const char* label, std::string_view value, float value_x, ImFont* val
     if (value_font != nullptr) {
         ImGui::PushFont(value_font);
     }
+    ImGui::PushTextWrapPos(0.0f);
     text(value);
+    ImGui::PopTextWrapPos();
     if (value_font != nullptr) {
         ImGui::PopFont();
     }

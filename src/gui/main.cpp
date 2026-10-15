@@ -176,7 +176,9 @@ public:
         std::wstring buffer(32768, L'\0');
         std::copy_n(suggested_name.begin(), std::min(suggested_name.size(), buffer.size() - 1), buffer.begin());
         OPENFILENAMEW dialog = file_dialog(buffer, kind);
-        dialog.lpstrTitle = kind == mh::gui::FileKind::Pointers ? L"Сохранение указателей" : L"Экспорт результатов";
+        dialog.lpstrTitle = kind == mh::gui::FileKind::Pointers    ? L"Сохранение указателей"
+                            : kind == mh::gui::FileKind::Structure ? L"Сохранение структуры"
+                                                                   : L"Экспорт результатов";
         dialog.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
         if (!GetSaveFileNameW(&dialog)) {
             return cancelled_or_failed("окно сохранения не открылось");
@@ -188,7 +190,7 @@ public:
     std::optional<std::filesystem::path> ask_open_path(mh::gui::FileKind kind) override {
         std::wstring buffer(32768, L'\0');
         OPENFILENAMEW dialog = file_dialog(buffer, kind);
-        dialog.lpstrTitle = L"Загрузка указателей";
+        dialog.lpstrTitle = kind == mh::gui::FileKind::Structure ? L"Загрузка структуры" : L"Загрузка указателей";
         dialog.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
         if (!GetOpenFileNameW(&dialog)) {
             return cancelled_or_failed("окно открытия файла не открылось");
@@ -206,15 +208,27 @@ private:
     OPENFILENAMEW file_dialog(std::wstring& buffer, mh::gui::FileKind kind) const {
         static constexpr wchar_t exports[] = L"JSON (*.json)\0*.json\0CSV (*.csv)\0*.csv\0Текст (*.txt)\0*.txt\0";
         static constexpr wchar_t pointers[] = L"Указатели MemHunter (*.mhp)\0*.mhp\0";
-        const bool pointer_file = kind == mh::gui::FileKind::Pointers;
+        static constexpr wchar_t structures[] = L"Структуры MemHunter (*.mhst)\0*.mhst\0Все файлы (*.*)\0*.*\0";
         OPENFILENAMEW dialog{};
         dialog.lStructSize = sizeof(dialog);
         dialog.hwndOwner = hwnd_;
-        dialog.lpstrFilter = pointer_file ? pointers : exports;
         dialog.nFilterIndex = 1;
         dialog.lpstrFile = buffer.data();
         dialog.nMaxFile = static_cast<DWORD>(buffer.size());
-        dialog.lpstrDefExt = pointer_file ? L"mhp" : L"json";
+        switch (kind) {
+            case mh::gui::FileKind::Pointers:
+                dialog.lpstrFilter = pointers;
+                dialog.lpstrDefExt = L"mhp";
+                break;
+            case mh::gui::FileKind::Structure:
+                dialog.lpstrFilter = structures;
+                dialog.lpstrDefExt = L"mhst";
+                break;
+            default:
+                dialog.lpstrFilter = exports;
+                dialog.lpstrDefExt = L"json";
+                break;
+        }
         return dialog;
     }
 

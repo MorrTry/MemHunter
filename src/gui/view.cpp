@@ -123,6 +123,14 @@ float button_width(const char* label) {
     return ImGui::CalcTextSize(label, nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2.0f;
 }
 
+float buttons_width(std::initializer_list<const char*> labels) {
+    float width = ImGui::GetStyle().ItemSpacing.x * static_cast<float>(labels.size() - 1);
+    for (const char* label : labels) {
+        width += button_width(label);
+    }
+    return width;
+}
+
 float font_text_width(ImFont* font, std::string_view text) {
     return font->CalcTextSizeA(font->FontSize, FLT_MAX, 0.0f, text.data(), text.data() + text.size()).x;
 }
@@ -195,8 +203,11 @@ bool View::attach(std::uint32_t pid) {
     filter_.clear();
     only_changed_ = false;
     pointers_time_ = {};
-    // After a restart the chains are checked on their page, so it stays open.
-    if (page_ != Page::Pointers || !session_.pointers().has_chains()) {
+    // After a restart the chains are checked on their page, and a structure at a chain is found again, so the page
+    // stays open.
+    const bool keep = (page_ == Page::Pointers && session_.pointers().has_chains()) ||
+                      (page_ == Page::Structure && session_.structure().active());
+    if (!keep) {
         page_ = Page::Results;
     }
     focus_search_ = true;
@@ -217,6 +228,9 @@ unsigned View::frame_interval_ms() const {
         return 250;
     }
     if (page_ == Page::Pointers && session_.pointers().has_chains()) {
+        return 250;
+    }
+    if (page_ == Page::Structure && session_.structure().active()) {
         return 250;
     }
     return 1000;
@@ -243,8 +257,8 @@ bool View::can_export() const {
     if (page_ == Page::Watch) {
         return !session_.watch().empty();
     }
-    // Chains are saved by their own button, in a file MemHunter can load back.
-    if (page_ == Page::Pointers || session_.busy()) {
+    // Chains and structures are saved by their own buttons, in files MemHunter can load back.
+    if (page_ == Page::Pointers || page_ == Page::Structure || session_.busy()) {
         return false;
     }
     return value_mode() ? !session_.values().rows().empty() : session_.table().has_results();
@@ -315,6 +329,8 @@ void View::handle_shortcuts() {
     if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal)) {
         if (page_ == Page::Pointers) {
             save_pointers();
+        } else if (page_ == Page::Structure) {
+            save_structure();
         } else {
             export_results();
         }
@@ -327,6 +343,14 @@ void View::handle_shortcuts() {
         return;
     }
     const bool copy = ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_C);
+    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_D) && page_ != Page::Regions && page_ != Page::Structure) {
+        open_struct_from_selection();
+        return;
+    }
+    if (page_ == Page::Structure) {
+        handle_struct_shortcuts(copy);
+        return;
+    }
     if (value_mode()) {
         const ValueHistory& history = session_.history();
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z) && history.can_undo()) {
@@ -405,6 +429,18 @@ void View::draw() {
         ImGui::OpenPopup("##clear_pointers");
         clear_pointers_requested_ = false;
     }
+    if (struct_open_requested_) {
+        ImGui::OpenPopup("##struct_open");
+        struct_open_requested_ = false;
+    }
+    if (struct_field_requested_) {
+        ImGui::OpenPopup("##struct_field");
+        struct_field_requested_ = false;
+    }
+    if (struct_instance_requested_) {
+        ImGui::OpenPopup("##struct_instance");
+        struct_instance_requested_ = false;
+    }
 
     draw_top_bar();
 
@@ -438,6 +474,9 @@ void View::draw() {
     draw_pointer_scan();
     draw_pointer_check();
     draw_clear_pointers();
+    draw_struct_open();
+    draw_struct_field();
+    draw_struct_instance();
     ImGui::End();
 }
 
@@ -952,68 +991,113 @@ void View::draw_pointer_summary() {
 }
 
 void View::draw_page_switch() {
-    const float segment_width = std::floor(120.0f * scale_);
-    if (ui::segment("Результаты", page_ == Page::Results, true, ImVec2(segment_width, 0.0f))) {
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const std::size_t watched = session_.watch().rows().size();
+    const std::string watch_label = (watched == 0 ? std::string("Адреса") : "Адреса (" + std::to_string(watched) + ")") + "###watch_page";
+    const std::size_t chains = session_.pointers().rows().size();
+    const std::string pointer_label =
+        (chains == 0 ? std::string("Указатели") : "Указатели (" + group_digits(chains) + ")") + "###pointer_page";
+    const float right_edge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+    float segments_end = ImGui::GetCursorPosX();
+    const auto segment = [&](const char* label, bool selected) {
+        const float width = std::floor(std::max(ImGui::CalcTextSize(label, nullptr, true).x + style.FramePadding.x * 4.0f, 100.0f * scale_));
+        segments_end += width;
+        return ui::segment(label, selected, true, ImVec2(width, 0.0f));
+    };
+    if (segment("Результаты", page_ == Page::Results)) {
         page_ = Page::Results;
     }
     ImGui::SameLine(0.0f, 0.0f);
-    if (ui::segment("Регионы", page_ == Page::Regions, true, ImVec2(segment_width, 0.0f))) {
+    if (segment("Регионы", page_ == Page::Regions)) {
         page_ = Page::Regions;
         if (!regions_loaded_) {
             refresh_regions();
         }
     }
     ImGui::SameLine(0.0f, 0.0f);
-    const std::size_t watched = session_.watch().rows().size();
-    const std::string watch_label = (watched == 0 ? std::string("Адреса") : "Адреса (" + std::to_string(watched) + ")") + "###watch_page";
-    if (ui::segment(watch_label.c_str(), page_ == Page::Watch, true, ImVec2(segment_width, 0.0f))) {
+    if (segment(watch_label.c_str(), page_ == Page::Watch)) {
         page_ = Page::Watch;
         scroll_to_selection_ = true;
     }
     ImGui::SetItemTooltip("Список адресов, за которыми вы следите");
     ImGui::SameLine(0.0f, 0.0f);
-    const std::size_t chains = session_.pointers().rows().size();
-    const std::string pointer_label =
-        (chains == 0 ? std::string("Указатели") : "Указатели (" + group_digits(chains) + ")") + "###pointer_page";
-    if (ui::segment(pointer_label.c_str(), page_ == Page::Pointers, true, ImVec2(segment_width, 0.0f))) {
+    if (segment(pointer_label.c_str(), page_ == Page::Pointers)) {
         page_ = Page::Pointers;
         scroll_to_selection_ = true;
     }
     ImGui::SetItemTooltip("Цепочки указателей, по которым адрес находится и после перезапуска программы");
-    ImGui::SameLine(0.0f, 20.0f * scale_);
-    const ImGuiStyle& style = ImGui::GetStyle();
-    const float right_edge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+    ImGui::SameLine(0.0f, 0.0f);
+    if (segment("Структура", page_ == Page::Structure)) {
+        page_ = Page::Structure;
+        scroll_to_selection_ = true;
+    }
+    ImGui::SetItemTooltip("Поля структуры вокруг адреса: типы, имена и значения, которые обновляются на глазах");
+
+    const float filter_min = 150.0f * scale_;
+    const float preview_width = std::floor(60.0f * scale_);
+    const float preview = ImGui::CalcTextSize("Превью").x + style.ItemSpacing.x * 3.0f + preview_width * 2.0f;
+    std::string value_count;
+    if (page_ == Page::Results && value_mode()) {
+        const ValueTable& values = session_.values();
+        value_count = !values.has_values() ? std::string("Пока нет результатов")
+                      : values.total() > values.rows().size()
+                          ? "Показаны первые " + group_digits(values.rows().size()) + " из " + group_digits(values.total())
+                          : "Показано " + count_addresses(values.total());
+    }
+    float bar = 0.0f;
+    if (page_ == Page::Watch) {
+        bar = buttons_width({"Добавить адрес…", "Очистить", "Найти указатели…", "Структура…"});
+    } else if (page_ == Page::Pointers) {
+        bar = buttons_width({"Проверить…", "Сохранить…", "Загрузить…", "Очистить"});
+    } else if (page_ == Page::Structure) {
+        bar = buttons_width({"Открыть…", "Сравнить…", "Сохранить…", "Загрузить…"});
+    } else if (page_ == Page::Results) {
+        bar = value_mode() ? ImGui::CalcTextSize(value_count.c_str()).x : preview + filter_min;
+    } else {
+        bar = buttons_width({"Обновить"}) + style.ItemSpacing.x * 2.0f + ImGui::GetFrameHeight() + style.ItemInnerSpacing.x +
+              ImGui::CalcTextSize("Только читаемые").x + filter_min;
+    }
+    // In a narrow window the bar goes under the page switch instead of running off the edge.
+    if (segments_end + 20.0f * scale_ + bar <= right_edge) {
+        ImGui::SameLine(0.0f, 20.0f * scale_);
+    }
 
     if (page_ == Page::Watch) {
         draw_watch_bar(right_edge);
     } else if (page_ == Page::Pointers) {
         draw_pointer_bar(right_edge);
+    } else if (page_ == Page::Structure) {
+        draw_struct_bar(right_edge);
     } else if (page_ == Page::Results && value_mode()) {
-        const ValueTable& values = session_.values();
-        ImGui::AlignTextToFramePadding();
-        if (!values.has_values()) {
-            ui::muted("Пока нет результатов");
-        } else if (values.total() > values.rows().size()) {
-            ui::muted("Показаны первые " + group_digits(values.rows().size()) + " из " + group_digits(values.total()));
-        } else {
-            ui::muted("Показано " + count_addresses(values.total()));
-        }
         const char* hint = "«Сейчас» обновляется дважды в секунду, рамка — значение изменилось";
-        ImGui::SameLine(std::max(right_edge - ImGui::CalcTextSize(hint).x, ImGui::GetCursorPosX() + 20.0f * scale_));
-        ui::muted(hint);
+        const float hint_width = ImGui::CalcTextSize(hint).x;
+        const float room = right_edge - ImGui::GetCursorPosX() - ImGui::CalcTextSize(value_count.c_str()).x;
+        ImGui::AlignTextToFramePadding();
+        ui::muted(value_count);
+        if (room - 20.0f * scale_ >= hint_width) {
+            ImGui::SameLine(right_edge - hint_width);
+            ui::muted(hint);
+        } else {
+            ImGui::SetItemTooltip("%s", hint);
+        }
     } else if (page_ == Page::Results) {
         ResultsTable& table = session_.table();
+        const std::string count = table.has_results()
+                                      ? "Показано " + group_digits(table.rows().size()) + " из " + group_digits(table.results().matches.size())
+                                      : std::string("Пока нет результатов");
+        const float room = right_edge - ImGui::GetCursorPosX();
+        const float count_width = ImGui::CalcTextSize(count.c_str()).x + 20.0f * scale_;
+        // In a narrow window the filter keeps its room and the count goes.
+        const bool show_count = room - count_width - preview >= filter_min;
+        const float filter_width = std::floor(std::clamp(room - preview - (show_count ? count_width : 0.0f), filter_min, 260.0f * scale_));
+        const float total = preview + filter_width;
         ImGui::AlignTextToFramePadding();
-        if (table.has_results()) {
-            ui::muted("Показано " + group_digits(table.rows().size()) + " из " + group_digits(table.results().matches.size()));
+        if (show_count) {
+            ui::muted(count);
+            ImGui::SameLine(std::max(right_edge - total, ImGui::GetCursorPosX()));
         } else {
-            ui::muted("Пока нет результатов");
+            ImGui::SetCursorPosX(std::max(right_edge - total, ImGui::GetCursorPosX()));
         }
-        const float filter_width = std::floor(260.0f * scale_);
-        const float preview_width = std::floor(70.0f * scale_);
-        const float label_width = ImGui::CalcTextSize("Превью").x;
-        const float total = label_width + style.ItemSpacing.x + preview_width * 2.0f + style.ItemSpacing.x * 2.0f + filter_width;
-        ImGui::SameLine(std::max(right_edge - total, ImGui::GetCursorPosX()));
         ui::muted("Превью");
         ImGui::SameLine();
         if (ui::segment("Hex", preview_ == PreviewMode::Hex, true, ImVec2(preview_width, 0.0f))) {
@@ -1028,8 +1112,12 @@ void View::draw_page_switch() {
             ImGui::SetKeyboardFocusHere();
             focus_filter_ = false;
         }
+        const char* filter_hint = "Фильтр: адрес, текст, байты…   Ctrl+F";
+        if (ImGui::CalcTextSize(filter_hint).x + style.FramePadding.x * 2.0f > filter_width) {
+            filter_hint = "Фильтр…   Ctrl+F";
+        }
         ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::InputTextWithHint("##filter", "Фильтр: адрес, текст, байты…   Ctrl+F", &filter_)) {
+        if (ImGui::InputTextWithHint("##filter", filter_hint, &filter_)) {
             table.set_filter(filter_);
             scroll_to_selection_ = true;
         }
@@ -1041,18 +1129,28 @@ void View::draw_page_switch() {
         if (ImGui::Checkbox("Только читаемые", &readable_regions_only_)) {
             rebuild_region_rows();
         }
-        ImGui::SameLine(0.0f, 20.0f * scale_);
         std::uint64_t bytes = 0;
         for (const std::size_t row : region_rows_) {
             bytes += regions_[row].size;
         }
-        ImGui::AlignTextToFramePadding();
-        ui::muted("Показано " + group_digits(region_rows_.size()) + " из " + group_digits(regions_.size()) + ", " + format_size(bytes));
-        const float filter_width = std::floor(260.0f * scale_);
-        ImGui::SameLine(std::max(right_edge - filter_width, ImGui::GetCursorPosX()));
+        const std::string count =
+            "Показано " + group_digits(region_rows_.size()) + " из " + group_digits(regions_.size()) + ", " + format_size(bytes);
+        ImGui::SameLine(0.0f, 20.0f * scale_);
+        const float room = right_edge - ImGui::GetCursorPosX();
+        const float count_width = ImGui::CalcTextSize(count.c_str()).x + 20.0f * scale_;
+        const bool show_count = room - count_width >= filter_min;
+        const float filter_width = std::floor(std::clamp(room - (show_count ? count_width : 0.0f), filter_min, 260.0f * scale_));
+        if (show_count) {
+            ImGui::AlignTextToFramePadding();
+            ui::muted(count);
+        }
+        ImGui::SameLine(right_edge - filter_width);
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::InputTextWithHint("##region_filter", "Фильтр: адрес, модуль, защита…", &region_filter_)) {
             rebuild_region_rows();
+        }
+        if (!show_count) {
+            ImGui::SetItemTooltip("%s", count.c_str());
         }
     }
 }
@@ -1066,6 +1164,8 @@ void View::draw_results(float height) {
         draw_watch_table(table_height);
     } else if (page_ == Page::Pointers) {
         draw_pointer_table(table_height);
+    } else if (page_ == Page::Structure) {
+        draw_struct_table(table_height);
     } else if (value_mode()) {
         draw_value_table(table_height);
     } else {
@@ -1172,6 +1272,9 @@ void View::draw_results_table(float height) {
                 ImGui::Separator();
                 if (ImGui::MenuItem("В список адресов", "Insert")) {
                     session_.add_watch(watch_entry_for(match.address, results.patterns[match.pattern].kind, match.length));
+                }
+                if (ImGui::MenuItem("Разобрать структуру…", "Ctrl+D")) {
+                    open_struct_from_selection();
                 }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
                     ImGui::CloseCurrentPopup();
@@ -1306,6 +1409,9 @@ void View::draw_value_table(float height) {
                 if (ImGui::MenuItem("В список адресов", "Insert")) {
                     session_.add_watch(make_watch_entry(value.address, watch_type(values.candidates()->type)));
                 }
+                if (ImGui::MenuItem("Разобрать структуру…", "Ctrl+D")) {
+                    open_struct_from_selection();
+                }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
                     ImGui::CloseCurrentPopup();
                 }
@@ -1401,9 +1507,12 @@ void View::draw_details(float height) {
     const PointerList& pointers = session_.pointers();
     const bool watch_page = page_ == Page::Watch;
     const bool pointer_page = page_ == Page::Pointers;
-    const bool result_page = !watch_page && !pointer_page;
+    const bool struct_page = page_ == Page::Structure;
+    const bool result_page = !watch_page && !pointer_page && !struct_page;
+    const StructTable& structure = session_.structure();
     const std::optional<std::size_t> watch_row = watch_page ? watch.selected_row() : std::nullopt;
     const std::optional<std::size_t> pointer_row = pointer_page ? pointers.selected_row() : std::nullopt;
+    const std::optional<std::size_t> struct_row = struct_page && structure.active() ? structure.selected_row() : std::nullopt;
     const ValueCandidate* value = result_page && value_mode() ? values.selected() : nullptr;
     std::optional<Match> match;
     if (watch_row) {
@@ -1413,18 +1522,26 @@ void View::draw_details(float height) {
         if (const auto address = pointers.address(*pointer_row)) {
             match = Match{.address = *address, .length = static_cast<std::uint32_t>(pointers.search().target.size())};
         }
+    } else if (struct_row) {
+        if (const auto address = structure.field_address(*struct_row, 0)) {
+            match = Match{.address = *address, .length = structure.rows()[*struct_row].field.size(structure.pointer_size())};
+        }
     } else if (value != nullptr) {
         match = Match{.address = value->address, .length = static_cast<std::uint32_t>(size_of(values.candidates()->type))};
     } else if (result_page && !value_mode() && session_.table().selected_match() != nullptr) {
         match = *session_.table().selected_match();
     }
     const ImGuiStyle& style = ImGui::GetStyle();
-    const float value_x = std::floor((pointer_page ? 108.0f : 84.0f) * scale_);
-    if (!match && pointer_row) {
+    const float value_x = std::floor((pointer_page || struct_page ? 108.0f : 84.0f) * scale_);
+    if (!match && (pointer_row || struct_row)) {
         // The chain leads nowhere now, so there is no memory to show.
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(style.ItemSpacing.x, std::floor(style.ItemSpacing.y * 0.5f)));
         ImGui::AlignTextToFramePadding();
-        draw_pointer_info(*pointer_row, value_x);
+        if (pointer_row) {
+            draw_pointer_info(*pointer_row, value_x);
+        } else {
+            draw_struct_info(*struct_row, value_x);
+        }
         ImGui::PopStyleVar();
         ImGui::EndChild();
         return;
@@ -1436,6 +1553,8 @@ void View::draw_details(float height) {
         } else if (pointer_page) {
             ui::muted(pointers.has_chains() ? "Выберите строку в списке."
                                             : "Здесь будет цепочка, куда она ведёт сейчас, и память там.");
+        } else if (struct_page) {
+            ui::muted(structure.active() ? "Выберите поле в таблице." : "Здесь будет поле структуры, его адрес и память вокруг него.");
         } else if (value_mode()) {
             ui::muted(values.has_values() ? "Выберите строку в таблице." : "Здесь будет адрес, его значение и память вокруг него.");
         } else {
@@ -1458,6 +1577,8 @@ void View::draw_details(float height) {
         draw_watch_info(*watch_row, value_x);
     } else if (pointer_row) {
         draw_pointer_info(*pointer_row, value_x);
+    } else if (struct_row) {
+        draw_struct_info(*struct_row, value_x);
     } else if (value != nullptr) {
         draw_value_info(*value, value_x);
     } else {
@@ -1741,8 +1862,9 @@ void View::draw_status_bar() {
         item("Ошибок чтения", "—");
         item("Время", "—");
     }
-    const char* hints = page_ == Page::Watch      ? "Del убрать    F2 описание    Ctrl+C адрес    Ctrl+S экспорт"
-                        : page_ == Page::Pointers ? "Insert в список адресов    Ctrl+C цепочка    Ctrl+S сохранить    Esc стоп"
+    const char* hints = page_ == Page::Watch       ? "Del убрать    F2 описание    Ctrl+C адрес    Ctrl+D структура    Ctrl+S экспорт"
+                        : page_ == Page::Pointers  ? "Insert в список адресов    Ctrl+C цепочка    Ctrl+D структура    Ctrl+S сохранить"
+                        : page_ == Page::Structure ? "F2 поле    Del сбросить    → ← раскрыть    Insert в список адресов    Ctrl+C адрес"
                         : value_mode()            ? "F5 искать    Esc стоп    Insert в список    Ctrl+C адрес    Ctrl+S экспорт"
                                                   : "F5 найти    Esc стоп    Ctrl+F фильтр    Insert в список    Ctrl+S экспорт";
     const float hints_width = ImGui::CalcTextSize(hints).x;

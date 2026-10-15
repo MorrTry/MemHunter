@@ -7,4 +7,5 @@ CMakeUserPresets.json
 *.mhs
 *.mhv
 *.mhp
+*.mhst
 *.user

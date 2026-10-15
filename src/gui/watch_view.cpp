@@ -130,11 +130,16 @@ void View::draw_watch_bar(float right_edge) {
         open_pointer_scan();
     }
     ImGui::SetItemTooltip("Цепочки указателей к выбранному адресу: по ним адрес находится и после перезапуска программы");
+    ImGui::SameLine();
+    if (ui::button("Структура…", watch.selected() != nullptr)) {
+        open_struct_from_selection();
+    }
+    ImGui::SetItemTooltip("Разобрать структуру вокруг выбранного адреса.  Ctrl+D");
     ImGui::SameLine(0.0f, 20.0f * scale_);
     ImGui::AlignTextToFramePadding();
     const std::string count = watch.empty() ? std::string("Список пуст") : "В списке " + count_addresses(watch.rows().size());
     const float count_end = ImGui::GetCursorPosX() + ImGui::CalcTextSize(count.c_str()).x;
-    ui::muted(count);
+    ui::muted(count_end <= right_edge ? count : std::string());
     const char* hint = "Рамка — значение менялось за 2 с";
     const float hint_x = right_edge - ImGui::CalcTextSize(hint).x;
     if (!watch.empty() && hint_x > count_end + 20.0f * scale_) {
@@ -245,6 +250,9 @@ void View::draw_watch_table(float height) {
                 ImGui::Separator();
                 if (ImGui::MenuItem("Найти указатели…", nullptr, false, !session_.busy() && alive_)) {
                     open_pointer_scan();
+                }
+                if (ImGui::MenuItem("Разобрать структуру…", "Ctrl+D")) {
+                    open_struct_from_selection();
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Удалить", "Del")) {

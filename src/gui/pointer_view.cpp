@@ -132,7 +132,7 @@ void View::draw_pointer_bar(float right_edge) {
         count = "Цепочек: " + group_digits(rows);
     }
     const float count_end = ImGui::GetCursorPosX() + ImGui::CalcTextSize(count.c_str()).x;
-    ui::muted(count);
+    ui::muted(count_end <= right_edge ? count : std::string());
     const char* hint = "Короткие цепочки — выше";
     const float hint_x = right_edge - ImGui::CalcTextSize(hint).x;
     if (chains && hint_x > count_end + 20.0f * scale_) {
@@ -238,6 +238,10 @@ void View::draw_pointer_table(float height) {
                 const std::optional<std::uint64_t> address = pointers.address(index);
                 if (ImGui::MenuItem("Копировать адрес", nullptr, false, address.has_value())) {
                     copy_address(*address);
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Разобрать структуру…", "Ctrl+D")) {
+                    open_struct_from_selection();
                 }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
                     ImGui::CloseCurrentPopup();
