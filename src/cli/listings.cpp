@@ -208,7 +208,93 @@ void write_struct_csv(std::ostream& out, const StructListing& listing) {
     }
 }
 
+std::string finding_size(const Finding& finding) {
+    return finding.size == 0 ? "-" : format_size(finding.size);
+}
+
+void write_inspection_text(std::ostream& out, const InspectListing& listing) {
+    std::size_t name_width = 9;
+    std::size_t where_width = 7;
+    for (const InspectedProcess& inspected : listing.processes) {
+        for (const Finding& finding : inspected.report.findings) {
+            name_width = std::max(name_width, display_width(inspected.process.name) + 2);
+            where_width = std::max(where_width, display_width(finding.where) + 2);
+        }
+    }
+    name_width = std::min<std::size_t>(name_width, 28);
+    where_width = std::min<std::size_t>(where_width, 48);
+    if (listing.all) {
+        out << fit_width("PID", 8) << fit_width("PROCESS", name_width);
+    }
+    out << fit_width("ADDRESS", 20) << fit_width("SIZE", 11) << fit_width("KIND", 14) << fit_width("WHERE", where_width) << "DETAILS\n";
+    for (const InspectedProcess& inspected : listing.processes) {
+        for (const Finding& finding : inspected.report.findings) {
+            if (listing.all) {
+                out << fit_width(std::to_string(inspected.process.pid), 8) << fit_width(inspected.process.name, name_width);
+            }
+            out << fit_width(format_address(finding.address), 20) << fit_width(finding_size(finding), 11)
+                << fit_width(to_string(finding.kind), 14) << fit_width(finding.where, where_width) << finding.details << '\n';
+        }
+    }
+}
+
+void write_inspection_json(std::ostream& out, const InspectListing& listing) {
+    out << "{\n  \"processes\": [";
+    bool first_process = true;
+    for (const InspectedProcess& inspected : listing.processes) {
+        const ProcessSummary& process = inspected.process;
+        const InspectReport& report = inspected.report;
+        out << (first_process ? "\n" : ",\n") << "    {\"pid\": " << process.pid << ", \"name\": \"" << json_escape(process.name)
+            << "\", \"path\": \"" << json_escape(process.path) << "\", \"wow64\": " << (process.wow64 ? "true" : "false")
+            << ", \"complete\": " << (report.complete ? "true" : "false") << ", \"modules\": " << report.stats.modules
+            << ", \"code_bytes\": " << report.stats.code_bytes << ", \"shared_bytes\": " << report.stats.shared_bytes
+            << ",\n     \"findings\": [";
+        bool first = true;
+        for (const Finding& finding : report.findings) {
+            out << (first ? "\n" : ",\n") << "      {\"kind\": \"" << to_string(finding.kind) << "\", \"address\": \""
+                << format_address(finding.address) << "\", \"size\": " << finding.size << ", \"where\": \"" << json_escape(finding.where)
+                << "\", \"details\": \"" << json_escape(finding.details) << "\"}";
+            first = false;
+        }
+        out << (first ? "]" : "\n     ]") << ",\n     \"warnings\": [";
+        first = true;
+        for (const std::string& warning : report.warnings) {
+            out << (first ? "\n" : ",\n") << "      \"" << json_escape(warning) << '"';
+            first = false;
+        }
+        out << (first ? "]}" : "\n     ]}");
+        first_process = false;
+    }
+    out << (first_process ? "],\n" : "\n  ],\n") << "  \"skipped\": [";
+    bool first = true;
+    for (const SkippedProcess& skipped : listing.skipped) {
+        out << (first ? "\n" : ",\n") << "    {\"pid\": " << skipped.pid << ", \"name\": \"" << json_escape(skipped.name)
+            << "\", \"error\": \"" << json_escape(skipped.error) << "\"}";
+        first = false;
+    }
+    out << (first ? "]\n}\n" : "\n  ]\n}\n");
+}
+
+void write_inspection_csv(std::ostream& out, const InspectListing& listing) {
+    out << "pid,process,kind,address,size,where,details\r\n";
+    for (const InspectedProcess& inspected : listing.processes) {
+        for (const Finding& finding : inspected.report.findings) {
+            out << inspected.process.pid << ',' << csv_field(inspected.process.name) << ',' << to_string(finding.kind) << ','
+                << format_address(finding.address) << ',' << finding.size << ',' << csv_field(finding.where) << ','
+                << csv_field(finding.details) << "\r\n";
+        }
+    }
+}
+
 }  // namespace
+
+void write_inspection(std::ostream& out, OutputFormat format, const InspectListing& listing) {
+    switch (format) {
+        case OutputFormat::Text: write_inspection_text(out, listing); break;
+        case OutputFormat::Json: write_inspection_json(out, listing); break;
+        case OutputFormat::Csv: write_inspection_csv(out, listing); break;
+    }
+}
 
 void write_struct(std::ostream& out, OutputFormat format, const StructListing& listing) {
     switch (format) {

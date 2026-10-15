@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -11,14 +13,17 @@
 #include <limits>
 #include <optional>
 #include <string_view>
+#include <thread>
 
 #include "cli/args.hpp"
 #include "cli/listings.hpp"
 #include "common/text.hpp"
+#include "inspect/process_inspect.hpp"
 #include "memory/memory_dump.hpp"
 #include "memory/process_memory.hpp"
 #include "pointer/pointer_file.hpp"
 #include "pointer/pointer_scan.hpp"
+#include "process/privilege.hpp"
 #include "process/process.hpp"
 #include "snapshot/capture.hpp"
 #include "snapshot/diff.hpp"
@@ -50,9 +55,17 @@ Usage:
   memhunter pointers <pid|name> --to ADDR  find chains of pointers that lead to an address
   memhunter pointers FILE --to ADDR        keep the saved chains that lead to the address after a restart
   memhunter struct <pid|name> BASE         show the fields of the structure at an address or a chain
+  memhunter inspect <pid|name>             look for injected code: executable memory outside modules,
+                                           PE headers, RWX memory, patched or replaced modules
+  memhunter inspect --all                  the same for every process MemHunter can open
   memhunter tui <pid|name>                 full-screen interface: scan, browse, filter and save results
   memhunter help [command]                 show help for a command
   memhunter --version
+
+Any command:
+  --debug-privilege                        enable SeDebugPrivilege, so that the processes of other users
+                                           and of services can be opened too; needs MemHunter to run as
+                                           administrator. Protected processes (PPL) stay closed
 
 Examples:
   memhunter scan 1234 --strings --min-length 8 --unicode
@@ -68,8 +81,8 @@ Exit codes:
   4  file error                               5  scan interrupted or target exited; partial results written
   6  damaged or foreign snapshot, value, pointer or structure file    9  internal error
 
-MemHunter only reads memory of processes the current user can open with PROCESS_VM_READ. It never
-elevates privileges, injects code or touches guard pages.
+MemHunter only reads memory of processes the current user can open with PROCESS_VM_READ. It enables
+SeDebugPrivilege only when asked with --debug-privilege, and never injects code or touches guard pages.
 )";
 
 constexpr std::string_view kScanHelp = R"(Usage: memhunter scan <pid|name> [options]
@@ -325,6 +338,34 @@ MemHunter only reads memory: it does not write values or freeze them.
 
 Exit codes: 0 shown, 1 the chain leads nowhere or nothing can be read there, 2 invalid arguments,
 3 process not found or access denied, 4 file error, 6 damaged definition file.
+)";
+
+constexpr std::string_view kInspectHelp = R"(Usage: memhunter inspect <pid|name> [options]
+       memhunter inspect --all [options]
+
+Looks for signs of code that was injected into a process or of modules that were changed after loading,
+like pe-sieve and Moneta. Only reads memory. Kinds of findings:
+  exec-private   executable memory that belongs to no module: private memory or a mapping without a
+                 file. Programs with a JIT compiler (browsers, .NET, Java, LuaJIT) have such memory too
+  pe-header      a PE header (MZ...PE) at the start of memory that is not a loaded module: a module that
+                 was copied in by hand instead of being loaded by Windows
+  rwx            memory that is writable and executable at once, also inside modules
+  patched        code of a module that differs from its file on disk once relocations are applied, such
+                 as hooks; antivirus programs and overlays hook functions too. Import tables are left out,
+                 and pages the process still shares with the file are unchanged and skipped
+  hollowed       a module whose file is missing or does not match it, or a main image that is not the
+                 file the process was started from (process hollowing)
+
+      --all                 check every process MemHunter can open; the others are listed as skipped
+      --kind LIST           only these kinds, comma-separated (default: all)
+  -f, --format FMT          text (default), json or csv
+  -o, --output FILE         write the findings to FILE instead of standard output
+  -q, --quiet               do not print the summary on stderr
+      --debug-privilege     enable SeDebugPrivilege to open the processes of other users and of services;
+                            needs MemHunter to run as administrator. Protected processes (PPL) stay closed
+
+Exit codes: 0 findings, 1 none, 2 invalid arguments, 3 process not found or access denied (or
+--debug-privilege without administrator rights), 4 file error, 5 interrupted; the findings are partial.
 )";
 
 template <typename Writer>
@@ -1358,6 +1399,150 @@ int struct_command(std::vector<std::string> args) {
     return kExitSuccess;
 }
 
+std::string finding_counts(std::span<const InspectedProcess> processes) {
+    std::array<std::size_t, kFindingKindCount> counts{};
+    for (const InspectedProcess& inspected : processes) {
+        for (const Finding& finding : inspected.report.findings) {
+            ++counts[static_cast<std::size_t>(finding.kind)];
+        }
+    }
+    std::string text;
+    for (std::size_t kind = 0; kind < kFindingKindCount; ++kind) {
+        if (counts[kind] != 0) {
+            text += (text.empty() ? "" : ", ") + std::string(to_string(static_cast<FindingKind>(kind))) + ' ' + std::to_string(counts[kind]);
+        }
+    }
+    return text;
+}
+
+std::string findings_text(std::size_t count) {
+    return count == 1 ? "1 finding" : std::to_string(count) + " findings";
+}
+
+void print_inspection_summary(const InspectedProcess& inspected) {
+    const InspectReport& report = inspected.report;
+    const InspectStats& stats = report.stats;
+    std::cerr << "pid " << inspected.process.pid << ' ' << inspected.process.name << ": ";
+    if (report.findings.empty()) {
+        std::cerr << "no findings";
+    } else {
+        std::cerr << findings_text(report.findings.size()) << " (" << finding_counts({&inspected, 1}) << ')';
+    }
+    std::cerr << "; " << stats.modules << " modules, " << format_size(stats.code_bytes) << " of code compared with the files, "
+              << format_size(stats.shared_bytes) << " shared with them unchanged, " << format_seconds(stats.seconds) << '\n';
+    for (const std::string& warning : report.warnings) {
+        std::cerr << "warning: " << warning << '\n';
+    }
+}
+
+void print_inspection_totals(const InspectListing& listing, double seconds) {
+    std::size_t with_findings = 0;
+    std::size_t warnings = 0;
+    for (const InspectedProcess& inspected : listing.processes) {
+        with_findings += inspected.report.findings.empty() ? 0 : 1;
+        warnings += inspected.report.warnings.size();
+    }
+    std::cerr << "Inspected " << listing.processes.size() << " processes in " << format_seconds(seconds) << ": ";
+    if (with_findings == 0) {
+        std::cerr << "no findings";
+    } else {
+        std::cerr << with_findings << " with findings (" << finding_counts(listing.processes) << ')';
+    }
+    std::cerr << "; " << listing.skipped.size() << " could not be opened\n";
+    if (warnings != 0) {
+        std::cerr << warnings << " warnings; -f json lists them with each process\n";
+    }
+    if (!listing.skipped.empty()) {
+        std::cerr << (debug_privilege_enabled()
+                          ? "Protected processes (PPL) cannot be opened even with SeDebugPrivilege.\n"
+                          : "Run MemHunter as administrator with --debug-privilege to open the processes of other users and of "
+                            "services too.\n");
+    }
+}
+
+InspectListing inspect_all(const InspectOptions& options, ImageFileCache& files, bool progress_enabled, std::stop_source& stop) {
+    std::vector<ProcessEntry> entries = list_processes();
+    std::erase_if(entries, [](const ProcessEntry& entry) { return entry.pid == 0; });
+    std::sort(entries.begin(), entries.end(), [](const ProcessEntry& a, const ProcessEntry& b) { return a.pid < b.pid; });
+    std::vector<std::optional<InspectedProcess>> inspected(entries.size());
+    std::vector<std::optional<SkippedProcess>> skipped(entries.size());
+    std::atomic<std::size_t> next{0};
+    std::atomic<std::size_t> done{0};
+    {
+        ProgressLine line(
+            [&](double) { return "Inspecting processes: " + std::to_string(done.load()) + " of " + std::to_string(entries.size()); },
+            progress_enabled);
+        const unsigned workers = std::clamp(std::thread::hardware_concurrency(), 1u, 8u);
+        std::vector<std::jthread> threads;
+        for (unsigned i = 0; i < workers; ++i) {
+            threads.emplace_back([&] {
+                for (std::size_t index = next++; index < entries.size() && !stop.stop_requested(); index = next++) {
+                    try {
+                        const Process process = Process::open(entries[index].pid);
+                        inspected[index] = InspectedProcess{summarize(process), inspect_process(process, files, options, stop.get_token())};
+                    } catch (const std::exception& error) {
+                        skipped[index] = SkippedProcess{entries[index].pid, entries[index].name, error.what()};
+                    }
+                    ++done;
+                }
+            });
+        }
+        threads.clear();
+        line.finish();
+    }
+    InspectListing listing;
+    listing.all = true;
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        if (inspected[i]) {
+            listing.processes.push_back(std::move(*inspected[i]));
+        } else if (skipped[i]) {
+            listing.skipped.push_back(std::move(*skipped[i]));
+        }
+    }
+    return listing;
+}
+
+int inspect_command(std::vector<std::string> args, const ConsoleSession& console) {
+    const InspectArgs args_given = parse_inspect_options(std::move(args));
+    InspectOptions options;
+    options.kinds = args_given.kinds;
+    ImageFileCache files;
+    std::stop_source stop;
+    const InterruptScope interrupt(stop);
+    const bool progress_enabled = !args_given.quiet && console.stderr_is_console();
+    const auto started = std::chrono::steady_clock::now();
+
+    InspectListing listing;
+    if (args_given.all) {
+        listing = inspect_all(options, files, progress_enabled, stop);
+    } else {
+        const Process process = Process::open(resolve_process(args_given.target));
+        ProcessSummary summary = summarize(process);
+        ProgressLine line([&](double) { return "Inspecting pid " + std::to_string(summary.pid) + ' ' + summary.name; }, progress_enabled);
+        InspectReport report = inspect_process(process, files, options, stop.get_token());
+        line.finish();
+        listing.processes.push_back({std::move(summary), std::move(report)});
+    }
+    emit(args_given.path, [&](std::ostream& out) { write_inspection(out, args_given.format, listing); });
+
+    const bool complete = !stop.stop_requested() && std::all_of(listing.processes.begin(), listing.processes.end(),
+                                                                 [](const InspectedProcess& p) { return p.report.complete; });
+    if (!args_given.quiet) {
+        if (args_given.all) {
+            print_inspection_totals(listing, std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count());
+        } else {
+            print_inspection_summary(listing.processes.front());
+        }
+    }
+    if (!complete) {
+        std::cerr << "Inspection interrupted; the findings are partial.\n";
+        return kExitIncomplete;
+    }
+    const bool found = std::any_of(listing.processes.begin(), listing.processes.end(),
+                                   [](const InspectedProcess& p) { return !p.report.findings.empty(); });
+    return found ? kExitSuccess : kExitNoMatches;
+}
+
 int info_command(std::vector<std::string> args) {
     const InfoOptions options = parse_info_options(std::move(args));
     const SnapshotFile file(options.path);
@@ -1390,6 +1575,8 @@ int help_command(const std::vector<std::string>& args) {
         std::cout << kPointersHelp;
     } else if (topic == "struct") {
         std::cout << kStructHelp;
+    } else if (topic == "inspect") {
+        std::cout << kInspectHelp;
     } else {
         throw Error(ErrorCode::InvalidArgument, "no help for unknown command '" + topic + "'");
     }
@@ -1426,7 +1613,10 @@ int exit_code_for(ErrorCode code) noexcept {
     return kExitInternal;
 }
 
-int run(const std::vector<std::string>& args, const ConsoleSession& console) {
+int run(std::vector<std::string> args, const ConsoleSession& console) {
+    if (take_debug_privilege(args)) {
+        enable_debug_privilege();
+    }
     if (args.empty() || args[0] == "-h" || args[0] == "--help") {
         std::cout << kMainHelp;
         return args.empty() ? kExitUsage : kExitSuccess;
@@ -1469,6 +1659,9 @@ int run(const std::vector<std::string>& args, const ConsoleSession& console) {
     }
     if (command == "struct") {
         return struct_command(std::move(rest));
+    }
+    if (command == "inspect") {
+        return inspect_command(std::move(rest), console);
     }
     if (command == "tui") {
         return tui_command(std::move(rest));

@@ -21,7 +21,7 @@ enum ExitCode : int {
 
 int exit_code_for(ErrorCode code) noexcept;
 
-// `args` excludes the program name.
-int run(const std::vector<std::string>& args, const ConsoleSession& console);
+// `args` excludes the program name. --debug-privilege anywhere before "--" enables SeDebugPrivilege first.
+int run(std::vector<std::string> args, const ConsoleSession& console);
 
 }  // namespace mh::cli

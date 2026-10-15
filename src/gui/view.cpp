@@ -18,6 +18,7 @@
 #include "gui/process_picker.hpp"
 #include "gui/view_internal.hpp"
 #include "gui/widgets.hpp"
+#include "process/privilege.hpp"
 
 namespace mh::gui {
 
@@ -68,6 +69,7 @@ const char* job_label(const Job& job) {
         case JobKind::ValueScan: return "Поиск значений";
         case JobKind::PointerScan: return "Поиск указателей";
         case JobKind::PointerCheck: return "Проверка цепочек";
+        case JobKind::Inspect: return "Проверка памяти";
     }
     return "";
 }
@@ -187,6 +189,7 @@ void View::show_picker() {
     picker_requested_ = true;
     picker_focus_ = true;
     picker_error_.clear();
+    debug_privilege_ = debug_privilege_enabled();
     process_filter_.clear();
     picked_pid_.reset();
     if (const Target* target = session_.target()) {
@@ -215,7 +218,7 @@ bool View::attach(std::uint32_t pid) {
     // After a restart the chains are checked on their page, and a structure at a chain is found again, so the page
     // stays open.
     const bool keep = (page_ == Page::Pointers && session_.pointers().has_chains()) ||
-                      (page_ == Page::Structure && session_.structure().active());
+                      (page_ == Page::Structure && session_.structure().active()) || page_ == Page::Inspect;
     if (!keep) {
         page_ = Page::Results;
     }
@@ -240,6 +243,9 @@ unsigned View::frame_interval_ms() const {
         return 250;
     }
     if (page_ == Page::Structure && session_.structure().active()) {
+        return 250;
+    }
+    if (page_ == Page::Inspect && live_dump_ && session_.findings().selected() != nullptr) {
         return 250;
     }
     return 1000;
@@ -267,7 +273,7 @@ bool View::can_export() const {
         return !session_.watch().empty();
     }
     // Chains and structures are saved by their own buttons, in files MemHunter can load back.
-    if (page_ == Page::Pointers || page_ == Page::Structure || session_.busy()) {
+    if (page_ == Page::Pointers || page_ == Page::Structure || page_ == Page::Inspect || session_.busy()) {
         return false;
     }
     return value_mode() ? !session_.values().rows().empty() : session_.table().has_results();
@@ -327,7 +333,11 @@ void View::handle_shortcuts() {
     }
     const ImGuiIO& io = ImGui::GetIO();
     if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
-        start_scan();
+        if (page_ == Page::Inspect) {
+            start_inspect();
+        } else {
+            start_scan();
+        }
     }
     if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) && session_.busy()) {
         session_.cancel();
@@ -352,12 +362,17 @@ void View::handle_shortcuts() {
         return;
     }
     const bool copy = ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_C);
-    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_D) && page_ != Page::Regions && page_ != Page::Structure) {
+    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_D) && page_ != Page::Regions && page_ != Page::Structure &&
+        page_ != Page::Inspect) {
         open_struct_from_selection();
         return;
     }
     if (page_ == Page::Structure) {
         handle_struct_shortcuts(copy);
+        return;
+    }
+    if (page_ == Page::Inspect) {
+        handle_inspect_shortcuts(copy);
         return;
     }
     if (value_mode()) {
@@ -892,6 +907,8 @@ void View::draw_progress_panel() {
         draw_pointer_progress(*running);
     } else if (running == nullptr && page_ == Page::Pointers) {
         draw_pointer_summary();
+    } else if ((running != nullptr && running->kind() == JobKind::Inspect) || (running == nullptr && page_ == Page::Inspect)) {
+        draw_inspect_progress(running);
     } else if (const Job* job = running) {
         const ScanProgress& progress = job->progress().current();
         const std::uint64_t bytes_total = progress.bytes_total.load(std::memory_order_relaxed);
@@ -1041,6 +1058,12 @@ void View::draw_page_switch() {
         scroll_to_selection_ = true;
     }
     ImGui::SetItemTooltip("Поля структуры вокруг адреса: типы, имена и значения, которые обновляются на глазах");
+    ImGui::SameLine(0.0f, 0.0f);
+    if (segment("Проверка", page_ == Page::Inspect)) {
+        page_ = Page::Inspect;
+        scroll_to_selection_ = true;
+    }
+    ImGui::SetItemTooltip("Поиск внедрённого кода: память вне модулей, RWX, PE-заголовки, изменённый код и подмена модулей");
 
     const float filter_min = 150.0f * scale_;
     const float preview_width = std::floor(60.0f * scale_);
@@ -1058,6 +1081,8 @@ void View::draw_page_switch() {
         bar = buttons_width({"Добавить адрес…", "Очистить", "Найти указатели…", "Структура…"});
     } else if (page_ == Page::Pointers) {
         bar = buttons_width({"Проверить…", "Сохранить…", "Загрузить…", "Очистить"});
+    } else if (page_ == Page::Inspect) {
+        bar = inspect_bar_width();
     } else if (page_ == Page::Structure) {
         bar = buttons_width({"Открыть…", "Сравнить…", "Сохранить…", "Загрузить…"});
     } else if (page_ == Page::Results) {
@@ -1077,6 +1102,8 @@ void View::draw_page_switch() {
         draw_pointer_bar(right_edge);
     } else if (page_ == Page::Structure) {
         draw_struct_bar(right_edge);
+    } else if (page_ == Page::Inspect) {
+        draw_inspect_bar(right_edge);
     } else if (page_ == Page::Results && value_mode()) {
         const char* hint = "«Сейчас» обновляется дважды в секунду, рамка — значение изменилось";
         const float hint_width = ImGui::CalcTextSize(hint).x;
@@ -1175,6 +1202,8 @@ void View::draw_results(float height) {
         draw_pointer_table(table_height);
     } else if (page_ == Page::Structure) {
         draw_struct_table(table_height);
+    } else if (page_ == Page::Inspect) {
+        draw_inspect_table(table_height);
     } else if (value_mode()) {
         draw_value_table(table_height);
     } else {
@@ -1532,14 +1561,19 @@ void View::draw_details(float height) {
     const bool watch_page = page_ == Page::Watch;
     const bool pointer_page = page_ == Page::Pointers;
     const bool struct_page = page_ == Page::Structure;
-    const bool result_page = !watch_page && !pointer_page && !struct_page;
+    const bool inspect_page = page_ == Page::Inspect;
+    const bool result_page = !watch_page && !pointer_page && !struct_page && !inspect_page;
     const StructTable& structure = session_.structure();
     const std::optional<std::size_t> watch_row = watch_page ? watch.selected_row() : std::nullopt;
     const std::optional<std::size_t> pointer_row = pointer_page ? pointers.selected_row() : std::nullopt;
     const std::optional<std::size_t> struct_row = struct_page && structure.active() ? structure.selected_row() : std::nullopt;
+    const Finding* finding = inspect_page ? session_.findings().selected() : nullptr;
     const ValueCandidate* value = result_page && value_mode() ? values.selected() : nullptr;
     std::optional<Match> match;
-    if (watch_row) {
+    if (finding != nullptr) {
+        match = Match{.address = finding->address,
+                      .length = static_cast<std::uint32_t>(std::min<std::uint64_t>(finding->size, UINT32_MAX))};
+    } else if (watch_row) {
         const WatchEntry& entry = watch.rows()[*watch_row];
         match = Match{.address = entry.address, .length = static_cast<std::uint32_t>(entry.size())};
     } else if (pointer_row) {
@@ -1579,6 +1613,9 @@ void View::draw_details(float height) {
                                             : "Здесь будет цепочка, куда она ведёт сейчас, и память там.");
         } else if (struct_page) {
             ui::muted(structure.active() ? "Выберите поле в таблице." : "Здесь будет поле структуры, его адрес и память вокруг него.");
+        } else if (inspect_page) {
+            ui::muted(session_.findings().rows().empty() ? "Здесь будет находка, её подробности и память по её адресу."
+                                                         : "Выберите строку в таблице.");
         } else if (value_mode()) {
             ui::muted(values.has_values() ? "Выберите строку в таблице." : "Здесь будет адрес, его значение и память вокруг него.");
         } else {
@@ -1597,7 +1634,9 @@ void View::draw_details(float height) {
     ImGui::BeginChild("##info", ImVec2(info_width, 0), ImGuiChildFlags_None, kPanel);
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(style.ItemSpacing.x, std::floor(style.ItemSpacing.y * 0.5f)));
     ImGui::AlignTextToFramePadding();
-    if (watch_row) {
+    if (finding != nullptr) {
+        draw_finding_info(*finding, value_x);
+    } else if (watch_row) {
         draw_watch_info(*watch_row, value_x);
     } else if (pointer_row) {
         draw_pointer_info(*pointer_row, value_x);
@@ -1845,7 +1884,12 @@ void View::draw_status_bar() {
     const ResultsTable& table = session_.table();
     const Job* running = session_.job();
     const PointerRun& pointer_run = session_.pointer_run();
-    if (running != nullptr && running->kind() == JobKind::PointerCheck) {
+    if (running != nullptr && running->kind() == JobKind::Inspect) {
+        item("Время", format_seconds(running->elapsed_seconds()));
+    } else if (running == nullptr && page_ == Page::Inspect) {
+        const FindingList& findings = session_.findings();
+        item("Время", findings.has_report() ? format_seconds(findings.report().stats.seconds) : std::string("—"));
+    } else if (running != nullptr && running->kind() == JobKind::PointerCheck) {
         // A check follows the chains with a few small reads each, so a speed in bytes would mean little.
         item("Время", format_seconds(running->elapsed_seconds()));
     } else if (running != nullptr && running->kind() == JobKind::PointerScan) {
@@ -1888,6 +1932,7 @@ void View::draw_status_bar() {
     const char* hints = page_ == Page::Watch       ? "Del убрать    F2 описание    Ctrl+C адрес    Ctrl+D структура    Ctrl+S экспорт"
                         : page_ == Page::Pointers  ? "Insert в список адресов    Ctrl+C цепочка    Ctrl+D структура    Ctrl+S сохранить"
                         : page_ == Page::Structure ? "F2 поле    Del сбросить    → ← раскрыть    Insert в список адресов    Ctrl+C адрес"
+                        : page_ == Page::Inspect   ? "F5 проверить    Esc стоп    Ctrl+C адрес"
                         : value_mode()            ? "F5 искать    Esc стоп    Insert в список    Ctrl+C адрес    Ctrl+S экспорт"
                                                   : "F5 найти    Esc стоп    Ctrl+F фильтр    Insert в список    Ctrl+S экспорт";
     const float hints_width = ImGui::CalcTextSize(hints).x;
@@ -1941,6 +1986,9 @@ void View::draw_picker() {
 
     if (!picker_error_.empty()) {
         ui::inverted_block(picker_error_);
+    }
+    if (!privilege_error_.empty()) {
+        ui::inverted_block(privilege_error_);
     }
 
     const float footer = ImGui::GetFrameHeight() + style.ItemSpacing.y * 2.0f + 1.0f;
@@ -2016,7 +2064,17 @@ void View::draw_picker() {
     }
 
     ImGui::Separator();
+    ImGui::AlignTextToFramePadding();
     ui::muted(group_digits(visible.size()) + " из " + group_digits(processes_.size()));
+    ImGui::SameLine(0.0f, 24.0f * scale_);
+    bool privileged = debug_privilege_;
+    if (ImGui::Checkbox("Права отладки", &privileged)) {
+        if (set_debug_privilege(privileged)) {
+            picker_error_.clear();
+        }
+    }
+    ImGui::SetItemTooltip("SeDebugPrivilege: открывает процессы других пользователей и служб. Нужен запуск MemHunter от имени "
+                          "администратора. Защищённые процессы (PPL) не открываются и так.");
     const float buttons = button_width("Открыть") + button_width("Отмена") + style.ItemSpacing.x;
     ImGui::SameLine(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - buttons);
     if (ui::button("Открыть", choice.has_value())) {

@@ -444,8 +444,14 @@ int run(HINSTANCE instance, int show) {
     mh::gui::View view(session, platform, fonts.get());
     view.set_scale(state.scale);
 
-    const std::vector<std::wstring> arguments = command_line_arguments();
-    if (arguments.size() >= 2) {
+    std::vector<std::wstring> arguments = command_line_arguments();
+    const auto flag = std::remove(arguments.begin() + std::min<std::ptrdiff_t>(1, std::ssize(arguments)), arguments.end(),
+                                  std::wstring(L"--debug-privilege"));
+    const bool debug_privilege = flag != arguments.end();
+    arguments.erase(flag, arguments.end());
+    // Without the privilege the process may not open, and the picker shows why.
+    const bool privileged = !debug_privilege || view.set_debug_privilege(true);
+    if (arguments.size() >= 2 && privileged) {
         view.open_from_command_line(mh::wide_to_utf8(arguments[1]));
     } else {
         view.show_picker();

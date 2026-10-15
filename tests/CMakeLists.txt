@@ -17,7 +17,7 @@ endif()
 
 add_executable(memhunter_test_target target/test_target.cpp)
 target_include_directories(memhunter_test_target PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(memhunter_test_target PRIVATE memhunter_options)
+target_link_libraries(memhunter_test_target PRIVATE memhunter_options advapi32)
 
 add_library(memhunter_test_support STATIC support/child_process.cpp)
 target_include_directories(memhunter_test_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -38,10 +38,12 @@ add_executable(memhunter_tests
   test_value_file.cpp
   test_pointers.cpp
   test_structure.cpp
+  test_inspect.cpp
   test_tui.cpp
   test_gui.cpp
   test_gui_pointers.cpp
   test_gui_structure.cpp
+  test_gui_inspect.cpp
   test_cli.cpp
 )
 target_link_libraries(memhunter_tests PRIVATE memhunter_test_support memhunter_tui memhunter_gui_model GTest::gtest_main)

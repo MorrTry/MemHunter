@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 
+#include "inspect/inspect.hpp"
 #include "pipeline/scan_session.hpp"
 #include "pointer/pointer_scan.hpp"
 #include "results/export.hpp"
@@ -174,6 +175,16 @@ struct PsOptions {
     OutputFormat format = OutputFormat::Text;
 };
 
+// Signs of injected code in one process, or with `all` in every process MemHunter can open.
+struct InspectArgs {
+    std::string target;
+    bool all = false;
+    std::uint32_t kinds = kAllFindingKinds;
+    OutputFormat format = OutputFormat::Text;
+    std::string path;
+    bool quiet = false;
+};
+
 ScanOptions parse_scan_options(std::vector<std::string> args);
 RegionsOptions parse_regions_options(std::vector<std::string> args);
 PsOptions parse_ps_options(std::vector<std::string> args);
@@ -184,6 +195,10 @@ TuiOptions parse_tui_options(std::vector<std::string> args);
 ValueOptions parse_value_options(std::vector<std::string> args);
 PointerOptions parse_pointer_options(std::vector<std::string> args);
 StructOptions parse_struct_options(std::vector<std::string> args);
+InspectArgs parse_inspect_options(std::vector<std::string> args);
+
+// Removes every --debug-privilege before a "--" and tells whether there was one.
+bool take_debug_privilege(std::vector<std::string>& args);
 
 // The condition for values of `type`. Integers: decimal or 0x-hex; = accepts the signed and the unsigned range of
 // the type, the ordered comparisons the signed one. Floats: = matches within half of the last digit typed ("100"

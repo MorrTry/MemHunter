@@ -12,6 +12,7 @@
 #include <stop_token>
 #include <thread>
 
+#include "inspect/inspect.hpp"
 #include "memory/memory_source.hpp"
 #include "pipeline/scan_session.hpp"
 #include "pointer/pointer_scan.hpp"
@@ -21,7 +22,7 @@
 
 namespace mh::gui {
 
-enum class JobKind : std::uint8_t { Scan, ChangedScan, Remember, ValueScan, PointerScan, PointerCheck };
+enum class JobKind : std::uint8_t { Scan, ChangedScan, Remember, ValueScan, PointerScan, PointerCheck, Inspect };
 enum class JobStage : std::uint8_t { Hashing, Scanning, Pointers };
 
 // Shared with the UI thread, which only reads it.
@@ -55,6 +56,7 @@ struct JobOutcome {
     std::optional<ValueScanResult> values;
     std::optional<PointerScanResult> pointers;
     std::optional<PointerFilterResult> checked;
+    std::optional<InspectReport> inspection;
 };
 
 // Runs one piece of work on its own thread. The UI thread polls finished() and then takes the outcome, so

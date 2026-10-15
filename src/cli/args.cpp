@@ -891,6 +891,62 @@ StructOptions parse_struct_options(std::vector<std::string> args) {
     return options;
 }
 
+InspectArgs parse_inspect_options(std::vector<std::string> args) {
+    InspectArgs options;
+    ArgReader reader(std::move(args));
+    std::vector<std::string> positionals;
+    while (!reader.done()) {
+        const auto option = reader.next_option();
+        if (!option) {
+            if (!reader.done()) {
+                positionals.push_back(reader.positional());
+            }
+            continue;
+        }
+        const std::string& o = *option;
+        if (o == "--all") {
+            reader.flag();
+            options.all = true;
+        } else if (o == "--kind") {
+            options.kinds = parse_finding_kinds(reader.value());
+        } else if (o == "-f" || o == "--format") {
+            options.format = parse_format(reader.value());
+        } else if (o == "-o" || o == "--output") {
+            options.path = reader.value();
+            if (options.path.empty()) {
+                invalid("--output needs a file name");
+            }
+        } else if (o == "-q" || o == "--quiet") {
+            reader.flag();
+            options.quiet = true;
+        } else {
+            reader.unknown();
+        }
+    }
+    if (options.all) {
+        if (!positionals.empty()) {
+            invalid("--all checks every process; leave out the target '" + positionals.front() + "'");
+        }
+        return options;
+    }
+    if (positionals.size() != 1) {
+        invalid(positionals.empty() ? "missing target process: give a PID or an executable name, or --all"
+                                    : "unexpected argument '" + positionals[1] + "'");
+    }
+    options.target = positionals.front();
+    return options;
+}
+
+bool take_debug_privilege(std::vector<std::string>& args) {
+    const auto end = std::find(args.begin(), args.end(), "--");
+    const auto removed = std::remove(args.begin(), end, "--debug-privilege");
+    if (removed == end) {
+        return false;
+    }
+    args.erase(removed, end);
+    return true;
+}
+
 ValueCondition parse_value_condition(Compare compare, ValueType type, std::string_view low, std::string_view high) {
     ValueCondition condition;
     condition.compare = compare;

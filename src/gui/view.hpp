@@ -33,7 +33,7 @@ public:
     virtual void set_title(const std::string& title) = 0;
 };
 
-enum class Page : std::uint8_t { Results, Regions, Watch, Pointers, Structure };
+enum class Page : std::uint8_t { Results, Regions, Watch, Pointers, Structure, Inspect };
 
 // Draws the whole window once per frame and turns clicks and shortcuts into Session calls. All presentation
 // lives here and in theme/widgets; scanning stays in Session.
@@ -44,6 +44,8 @@ public:
     // Opens the process given on the command line (a PID or an executable name); errors land in the picker.
     void open_from_command_line(const std::string& pid_or_name);
     void show_picker();
+    // Turns SeDebugPrivilege on or off for MemHunter; a failure is shown in the process picker.
+    bool set_debug_privilege(bool enabled);
 
     void set_scale(float scale) noexcept { scale_ = scale; }
     void draw();
@@ -134,6 +136,15 @@ private:
     void draw_struct_field();
     void draw_struct_instance();
 
+    // Injected code; drawn in inspect_view.cpp.
+    void start_inspect();
+    void handle_inspect_shortcuts(bool copy);
+    void draw_inspect_progress(const Job* running);
+    float inspect_bar_width() const;
+    void draw_inspect_bar(float right_edge);
+    void draw_inspect_table(float height);
+    void draw_finding_info(const Finding& finding, float value_x);
+
     Session& session_;
     Platform& platform_;
     const theme::Fonts& fonts_;
@@ -159,6 +170,8 @@ private:
     std::string picker_error_;
     int process_sort_ = 0;
     bool process_descending_ = false;
+    bool debug_privilege_ = false;
+    std::string privilege_error_;
 
     std::vector<Region> regions_;
     bool regions_loaded_ = false;

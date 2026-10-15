@@ -6,10 +6,12 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <stop_token>
 #include <string>
 #include <vector>
 
 #include "common/error.hpp"
+#include "gui/finding_list.hpp"
 #include "gui/job.hpp"
 #include "gui/pointer_list.hpp"
 #include "gui/results_table.hpp"
@@ -32,6 +34,8 @@ public:
     virtual ~Target() = default;
     virtual const MemorySource& memory() const = 0;
     virtual const ProcessSummary& summary() const = 0;
+    // Looks for injected code (see inspect_memory) from the job thread; nullopt when the target cannot be inspected.
+    virtual std::optional<InspectReport> inspect(const InspectOptions& options, std::stop_token stop) const;
 };
 
 // Throws Error when the process cannot be opened for reading.
@@ -168,6 +172,11 @@ public:
     bool save_structure(const std::filesystem::path& path);
     bool load_structure(const std::filesystem::path& path);
 
+    FindingList& findings() noexcept { return findings_; }
+    const FindingList& findings() const noexcept { return findings_; }
+    // Looks for injected code in the target; the findings replace those of the last inspection when it completes.
+    bool start_inspect();
+
     const Notice& notice() const noexcept { return notice_; }
     void set_notice(std::string text, bool error);
 
@@ -177,6 +186,7 @@ private:
     void finish_values(ValueScanResult result, double seconds);
     void finish_pointers(PointerScanResult result, double seconds);
     void finish_check(PointerFilterResult result, double seconds);
+    void finish_inspect(std::optional<InspectReport> report, double seconds);
     // Rereads the regions of the target for the address list, the pointer list and the structure.
     void refresh_modules();
 
@@ -200,6 +210,7 @@ private:
     std::optional<std::uint64_t> pending_address_;
     PointerRun pointer_run_;
     StructTable structure_;
+    FindingList findings_;
     double last_seconds_ = 0;
     Notice notice_;
 };

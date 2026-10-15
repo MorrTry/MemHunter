@@ -4,8 +4,14 @@
 //   mutate        moves the mutable needle and prints its new address
 //   set N         stores the int32 N in the counter and prints "counter N"
 //   move          moves the counter to a new page, keeps its value and prints "counter ADDRESS"
+//   rwx           allocates a writable and executable page and prints "rwx ADDRESS"
+//   pe            copies its own PE headers into private memory and prints "pe ADDRESS"
+//   patch         changes 4 bytes of its own code and prints "patched ADDRESS 4"
+//   trim          removes its pages from the working set and prints "trimmed"
+//   lock          denies everyone access to the process and prints "locked"
 //   exit          ends the process
 #include <windows.h>
+#include <aclapi.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -221,6 +227,48 @@ bool guard_armed(const void* address) {
     return VirtualQuery(address, &info, sizeof(info)) != 0 && (info.Protect & PAGE_GUARD) != 0;
 }
 
+void print_address(const char* word, const void* address) {
+    std::printf("%s 0x%llX\n", word, static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(address)));
+}
+
+// Never called; only its bytes are changed by the "patch" command.
+__attribute__((noinline)) int patch_site(int value) {
+    return value * 7 + 3;
+}
+
+int (*volatile g_patch_site)(int) = patch_site;
+
+void patch_code() {
+    auto* code = reinterpret_cast<std::uint8_t*>(reinterpret_cast<std::uintptr_t>(g_patch_site));
+    DWORD old = 0;
+    if (VirtualProtect(code, 4, PAGE_EXECUTE_READWRITE, &old) == 0) {
+        fail("VirtualProtect");
+    }
+    for (int i = 0; i < 4; ++i) {
+        code[i] ^= 0xFF;
+    }
+    protect(code, 4, old);
+    FlushInstructionCache(GetCurrentProcess(), code, 4);
+    std::printf("patched 0x%llX 4\n", static_cast<unsigned long long>(reinterpret_cast<std::uintptr_t>(code)));
+}
+
+void copy_headers() {
+    const auto* image = reinterpret_cast<const std::uint8_t*>(GetModuleHandleW(nullptr));
+    std::uint8_t* copy = allocate(kPage);
+    std::memcpy(copy, image, kPage);
+    print_address("pe", copy);
+}
+
+void lock_process() {
+    ACL empty{};
+    if (!InitializeAcl(&empty, sizeof(empty), ACL_REVISION) ||
+        SetSecurityInfo(GetCurrentProcess(), SE_KERNEL_OBJECT, DACL_SECURITY_INFORMATION, nullptr, nullptr, &empty, nullptr) !=
+            ERROR_SUCCESS) {
+        fail("SetSecurityInfo");
+    }
+    std::printf("locked\n");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -248,6 +296,19 @@ int main(int argc, char** argv) {
             std::memcpy(page + 64, counter(), sizeof(std::int32_t));
             g_holder->counter_page = page;
             announce_counter();
+        } else if (command == "rwx") {
+            std::uint8_t* page = allocate(kPage, PAGE_EXECUTE_READWRITE);
+            page[0] = 0xC3;
+            print_address("rwx", page);
+        } else if (command == "pe") {
+            copy_headers();
+        } else if (command == "patch") {
+            patch_code();
+        } else if (command == "trim") {
+            SetProcessWorkingSetSize(GetCurrentProcess(), static_cast<SIZE_T>(-1), static_cast<SIZE_T>(-1));
+            std::printf("trimmed\n");
+        } else if (command == "lock") {
+            lock_process();
         } else if (command == "exit") {
             break;
         } else {

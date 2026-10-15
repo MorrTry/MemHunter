@@ -2,6 +2,7 @@ add_library(memhunter_core STATIC
   common/error.cpp
   common/text.cpp
   process/process.cpp
+  process/privilege.cpp
   memory/region.cpp
   memory/process_memory.cpp
   memory/segmented_read.cpp
@@ -34,9 +35,12 @@ add_library(memhunter_core STATIC
   pointer/pointer_file.cpp
   structure/struct_layout.cpp
   structure/struct_file.cpp
+  inspect/pe_image.cpp
+  inspect/inspect.cpp
+  inspect/process_inspect.cpp
 )
 target_include_directories(memhunter_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(memhunter_core PUBLIC memhunter_options psapi)
+target_link_libraries(memhunter_core PUBLIC memhunter_options psapi advapi32)
 
 add_library(memhunter_tui STATIC
   tui/screen.cpp
@@ -57,6 +61,7 @@ add_library(memhunter_gui_model STATIC
   gui/value_history.cpp
   gui/watch_list.cpp
   gui/pointer_list.cpp
+  gui/finding_list.cpp
   gui/struct_table.cpp
   gui/process_picker.cpp
   gui/job.cpp

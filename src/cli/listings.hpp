@@ -4,6 +4,7 @@
 #include <ostream>
 #include <span>
 
+#include "inspect/inspect.hpp"
 #include "memory/region.hpp"
 #include "pointer/pointer_chain.hpp"
 #include "process/process.hpp"
@@ -65,7 +66,26 @@ struct StructListing {
     std::vector<StructRow> rows;
 };
 
+struct InspectedProcess {
+    ProcessSummary process;
+    InspectReport report;
+};
+
+struct SkippedProcess {
+    std::uint32_t pid = 0;
+    std::string name;
+    std::string error;
+};
+
+struct InspectListing {
+    std::vector<InspectedProcess> processes;
+    std::vector<SkippedProcess> skipped;
+    // Adds PID and PROCESS columns to the text and CSV output.
+    bool all = false;
+};
+
 void write_regions(std::ostream& out, OutputFormat format, const ProcessSummary& process, std::span<const Region> regions);
+void write_inspection(std::ostream& out, OutputFormat format, const InspectListing& listing);
 void write_values(std::ostream& out, OutputFormat format, const ValueListing& listing);
 void write_pointers(std::ostream& out, OutputFormat format, const PointerListing& listing);
 void write_struct(std::ostream& out, OutputFormat format, const StructListing& listing);

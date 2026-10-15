@@ -8,8 +8,10 @@
 #include <ostream>
 
 #include "common/text.hpp"
+#include "inspect/process_inspect.hpp"
 #include "memory/process_memory.hpp"
 #include "pointer/pointer_file.hpp"
+#include "process/privilege.hpp"
 #include "process/process.hpp"
 #include "results/export.hpp"
 #include "structure/struct_file.hpp"
@@ -33,10 +35,16 @@ public:
     const MemorySource& memory() const override { return memory_; }
     const ProcessSummary& summary() const override { return summary_; }
 
+    std::optional<InspectReport> inspect(const InspectOptions& options, std::stop_token stop) const override {
+        return inspect_process(process_, files_, options, std::move(stop));
+    }
+
+
 private:
     Process process_;
     ProcessMemory memory_;
     ProcessSummary summary_;
+    mutable ImageFileCache files_;
 };
 
 OutputFormat format_of(const std::filesystem::path& path) {
@@ -46,6 +54,11 @@ OutputFormat format_of(const std::filesystem::path& path) {
 
 }  // namespace
 
+std::optional<InspectReport> Target::inspect(const InspectOptions&, std::stop_token) const {
+    return std::nullopt;
+}
+
+
 std::unique_ptr<Target> open_process(std::uint32_t pid) {
     return std::make_unique<ProcessTarget>(Process::open(pid));
 }
@@ -53,9 +66,12 @@ std::unique_ptr<Target> open_process(std::uint32_t pid) {
 std::string describe_error(const Error& error) {
     switch (error.code()) {
         case ErrorCode::AccessDenied:
-            return "Нет доступа к процессу. Windows не разрешила открыть его для чтения. Так бывает с процессами другого "
-                   "пользователя и процессами, запущенными от имени администратора (тогда и MemHunter нужно запускать так же), "
-                   "с системными и защищёнными процессами, а также когда процесс сам запрещает доступ к себе.";
+            return std::string("Нет доступа к процессу. Windows не разрешила открыть его для чтения. Так бывает с процессами другого "
+                               "пользователя и процессами, запущенными от имени администратора (тогда и MemHunter нужно запускать так "
+                               "же), с системными и защищёнными процессами, а также когда процесс сам запрещает доступ к себе.") +
+                   (debug_privilege_enabled() ? " Защищённые процессы (PPL) не открываются и с правами отладки."
+                                              : " MemHunter, запущенный от имени администратора, открывает такие процессы с "
+                                                "отметкой «Права отладки» в окне выбора процесса.");
         case ErrorCode::ProcessNotFound: return "Процесс не найден: возможно, он уже завершился.";
         case ErrorCode::ProcessExited: return "Процесс уже завершился.";
         case ErrorCode::Io: return std::string("Ошибка файла: ") + error.what();
@@ -63,6 +79,7 @@ std::string describe_error(const Error& error) {
         default: return error.what();
     }
 }
+
 
 LiveState live_state(const ResultSet& results, std::span<const Pattern> patterns, const Match& match, const MemoryDump& dump) {
     const std::uint64_t end = match.address + match.length;
@@ -231,6 +248,7 @@ void export_watch(const std::filesystem::path& path, const ProcessSummary& proce
     write_file(path, [&](std::ostream& out, OutputFormat format) { write_watch(out, format, process, list, memory); });
 }
 
+
 Session::~Session() {
     stop_job();
 }
@@ -267,6 +285,7 @@ void Session::attach(std::unique_ptr<Target> target) {
     values_.clear();
     value_run_ = {};
     history_.clear();
+    findings_.clear();
     target_ = std::move(target);
     if (target_) {
         refresh_modules();
@@ -488,7 +507,49 @@ void Session::finish_values(ValueScanResult result, double seconds) {
     }
 }
 
+bool Session::start_inspect() {
+    if (!target_) {
+        set_notice("Сначала выберите процесс", true);
+        return false;
+    }
+    if (job_) {
+        return false;
+    }
+    notice_ = {};
+    const Target& target = *target_;
+    job_ = std::make_unique<Job>(JobKind::Inspect, [&target](std::stop_token stop, JobProgress&) {
+        JobOutcome outcome;
+        outcome.inspection = target.inspect({}, stop);
+        if (stop.stop_requested()) {
+            outcome.status = ScanStatus::Cancelled;
+        }
+        return outcome;
+    });
+    return true;
+}
+
+void Session::finish_inspect(std::optional<InspectReport> report, double seconds) {
+    if (!report) {
+        set_notice("Этот процесс нельзя проверить", true);
+        return;
+    }
+    const bool complete = report->complete;
+    const std::size_t count = report->findings.size();
+    findings_.assign(std::move(*report));
+    if (!complete) {
+        set_notice("Проверка остановлена, находки неполные: " + count_findings(count), false);
+    } else if (count == 0) {
+        set_notice("Проверка за " + format_seconds(seconds) + ": ничего подозрительного не найдено", false);
+    } else {
+        set_notice("Проверка за " + format_seconds(seconds) + ": " + count_findings(count), false);
+    }
+}
+
 void Session::finish(JobKind kind, JobOutcome outcome, double seconds) {
+    if (kind == JobKind::Inspect) {
+        finish_inspect(std::move(outcome.inspection), seconds);
+        return;
+    }
     if (kind == JobKind::PointerScan) {
         if (outcome.pointers) {
             const PointerScanResult& result = *outcome.pointers;
