@@ -180,9 +180,9 @@ void View::draw_pointer_table(float height) {
         return;
     }
     ImGui::TableSetupColumn("База", 0, font_text_width(fonts_.mono, "memhunter_practice.exe+0x1A2B0"));
-    ImGui::TableSetupColumn("Смещения", 0, font_text_width(fonts_.mono, "0x10, 0x8, 0x2A0, 0x18"));
-    ImGui::TableSetupColumn("Адрес", 0, font_text_width(fonts_.mono, "0x0000000000000000"));
-    ImGui::TableSetupColumn("Значение", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("Смещения", ImGuiTableColumnFlags_WidthStretch, 2.4f);
+    ImGui::TableSetupColumn("Адрес", ImGuiTableColumnFlags_WidthStretch, 1.6f);
+    ImGui::TableSetupColumn("Значение", ImGuiTableColumnFlags_WidthStretch, 1.0f);
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableHeadersRow();
 

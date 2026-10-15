@@ -117,6 +117,15 @@ std::string match_text(const ResultSet& results, const Match& match) {
     return is_utf16_kind(results.patterns[match.pattern].kind) ? utf16_preview(taken) : ascii_preview(taken);
 }
 
+// Wider than the panel when the columns don't fit, so the table scrolls sideways instead of squeezing them.
+float table_inner_width(std::span<const float> widths) {
+    float width = 0.0f;
+    for (const float column : widths) {
+        width += column + ImGui::GetStyle().CellPadding.x * 2.0f + 1.0f;
+    }
+    return std::max(ImGui::GetContentRegionAvail().x, width);
+}
+
 }  // namespace
 
 float button_width(const char* label) {
@@ -1202,24 +1211,33 @@ void View::draw_results_table(float height) {
     const float mono_offset = std::floor((row_height - mono_line) * 0.5f);
     page_rows_ = std::max(1, static_cast<int>(height / (row_height + style.CellPadding.y * 2.0f)) - 2);
 
-    constexpr ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV |
-                                      ImGuiTableFlags_Resizable | ImGuiTableFlags_Sortable | ImGuiTableFlags_SizingFixedFit;
-    if (!ImGui::BeginTable("##results", static_cast<int>(kColumnCount), flags, ImVec2(0, height))) {
+    const std::array<float, kColumnCount> widths = {font_text_width(fonts_.mono, "0x0000000000000000"),
+                                                    105.0f * scale_,
+                                                    150.0f * scale_,
+                                                    55.0f * scale_,
+                                                    70.0f * scale_,
+                                                    65.0f * scale_,
+                                                    130.0f * scale_,
+                                                    200.0f * scale_};
+    constexpr ImGuiTableFlags flags = ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersOuter |
+                                      ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_Sortable |
+                                      ImGuiTableFlags_SizingFixedFit;
+    if (!ImGui::BeginTable("##results", static_cast<int>(kColumnCount), flags, ImVec2(0, height), table_inner_width(widths))) {
         return;
     }
-    const float address_width = font_text_width(fonts_.mono, "0x0000000000000000");
-    const auto column = [](const char* label, ImGuiTableColumnFlags column_flags, float width, Column id) {
-        ImGui::TableSetupColumn(label, column_flags, width, static_cast<ImGuiID>(id));
+    const auto column = [&widths](const char* label, ImGuiTableColumnFlags column_flags, Column id) {
+        const bool stretch = (column_flags & ImGuiTableColumnFlags_WidthStretch) != 0;
+        ImGui::TableSetupColumn(label, column_flags, stretch ? 0.0f : widths[static_cast<std::size_t>(id)], static_cast<ImGuiID>(id));
     };
-    column("Адрес", ImGuiTableColumnFlags_DefaultSort, address_width, Column::Address);
-    column("Тип", 0, 105.0f * scale_, Column::Kind);
-    column("Шаблон", 0, 150.0f * scale_, Column::Pattern);
-    column("Длина", 0, 55.0f * scale_, Column::Length);
-    column("Защита", 0, 70.0f * scale_, Column::Protection);
-    column("Память", 0, 65.0f * scale_, Column::Type);
-    column("Модуль", 0, 130.0f * scale_, Column::Module);
-    column("Превью", ImGuiTableColumnFlags_WidthStretch, 0.0f, Column::Preview);
-    ImGui::TableSetupScrollFreeze(0, 1);
+    column("Адрес", ImGuiTableColumnFlags_DefaultSort, Column::Address);
+    column("Тип", 0, Column::Kind);
+    column("Шаблон", 0, Column::Pattern);
+    column("Длина", 0, Column::Length);
+    column("Защита", 0, Column::Protection);
+    column("Память", 0, Column::Type);
+    column("Модуль", 0, Column::Module);
+    column("Превью", ImGuiTableColumnFlags_WidthStretch, Column::Preview);
+    ImGui::TableSetupScrollFreeze(1, 1);
     ImGui::TableHeadersRow();
 
     if (ImGuiTableSortSpecs* specs = ImGui::TableGetSortSpecs(); specs != nullptr && specs->SpecsDirty) {
@@ -1347,18 +1365,24 @@ void View::draw_value_table(float height) {
         values_time_ = now;
     }
 
-    constexpr ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV |
-                                      ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingFixedFit;
-    if (!ImGui::BeginTable("##values", 6, flags, ImVec2(0, height))) {
+    const std::array<float, 6> widths = {font_text_width(fonts_.mono, "0x0000000000000000"),
+                                         150.0f * scale_,
+                                         150.0f * scale_,
+                                         70.0f * scale_,
+                                         65.0f * scale_,
+                                         130.0f * scale_};
+    constexpr ImGuiTableFlags flags = ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersOuter |
+                                      ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingFixedFit;
+    if (!ImGui::BeginTable("##values", 6, flags, ImVec2(0, height), table_inner_width(widths))) {
         return;
     }
-    ImGui::TableSetupColumn("Адрес", 0, font_text_width(fonts_.mono, "0x0000000000000000"));
-    ImGui::TableSetupColumn("Сейчас", 0, 150.0f * scale_);
-    ImGui::TableSetupColumn("Было", 0, 150.0f * scale_);
-    ImGui::TableSetupColumn("Защита", 0, 70.0f * scale_);
-    ImGui::TableSetupColumn("Память", 0, 65.0f * scale_);
+    ImGui::TableSetupColumn("Адрес", 0, widths[0]);
+    ImGui::TableSetupColumn("Сейчас", 0, widths[1]);
+    ImGui::TableSetupColumn("Было", 0, widths[2]);
+    ImGui::TableSetupColumn("Защита", 0, widths[3]);
+    ImGui::TableSetupColumn("Память", 0, widths[4]);
     ImGui::TableSetupColumn("Модуль", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupScrollFreeze(0, 1);
+    ImGui::TableSetupScrollFreeze(1, 1);
     ImGui::TableHeadersRow();
 
     ImGuiListClipper clipper;
@@ -1755,10 +1779,10 @@ void View::draw_regions(float height) {
     }
     const float address_width = font_text_width(fonts_.mono, "0x0000000000000000");
     ImGui::TableSetupColumn("Начало", 0, address_width);
-    ImGui::TableSetupColumn("Размер", 0, 95.0f * scale_);
-    ImGui::TableSetupColumn("Состояние", 0, 85.0f * scale_);
-    ImGui::TableSetupColumn("Защита", 0, 110.0f * scale_);
-    ImGui::TableSetupColumn("Тип", 0, 70.0f * scale_);
+    ImGui::TableSetupColumn("Размер", 0, ImGui::CalcTextSize("1023.99 KiB").x);
+    ImGui::TableSetupColumn("Состояние", 0, ImGui::CalcTextSize("Состояние").x);
+    ImGui::TableSetupColumn("Защита", 0, ImGui::CalcTextSize("rw- guard").x);
+    ImGui::TableSetupColumn("Тип", 0, ImGui::CalcTextSize("private").x);
     ImGui::TableSetupColumn("Модуль или файл", ImGuiTableColumnFlags_WidthStretch);
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableHeadersRow();

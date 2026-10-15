@@ -183,11 +183,11 @@ void View::draw_watch_table(float height) {
     if (!ImGui::BeginTable("##watch", 5, flags, ImVec2(0, height))) {
         return;
     }
-    ImGui::TableSetupColumn("Описание", 0, 180.0f * scale_);
+    ImGui::TableSetupColumn("Описание", ImGuiTableColumnFlags_WidthStretch, 1.8f);
     ImGui::TableSetupColumn("Адрес", 0, font_text_width(fonts_.mono, "P->0x0000000000000000"));
-    ImGui::TableSetupColumn("Тип", 0, 140.0f * scale_);
-    ImGui::TableSetupColumn("Значение", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupColumn("Модуль", 0, 130.0f * scale_);
+    ImGui::TableSetupColumn("Тип", ImGuiTableColumnFlags_WidthStretch, 1.4f);
+    ImGui::TableSetupColumn("Значение", ImGuiTableColumnFlags_WidthStretch, 4.0f);
+    ImGui::TableSetupColumn("Модуль", ImGuiTableColumnFlags_WidthStretch, 1.3f);
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableHeadersRow();
 
