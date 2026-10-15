@@ -43,7 +43,7 @@ std::string describe(const std::vector<StructField>& fields) {
     return text;
 }
 
-// A player much like the one of memhunter_practice, followed by pointers, a double and zeros.
+// A game player object followed by pointers, a double and zeros.
 class Structure : public ::testing::Test {
 protected:
     static constexpr std::uint64_t kGame = 0x140000000;

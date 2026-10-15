@@ -1,2 +1,0 @@
-add_executable(memhunter_practice practice_target.cpp)
-target_link_libraries(memhunter_practice PRIVATE memhunter_options advapi32)

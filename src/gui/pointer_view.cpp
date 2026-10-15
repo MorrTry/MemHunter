@@ -179,7 +179,7 @@ void View::draw_pointer_table(float height) {
     if (!ImGui::BeginTable("##pointers", 4, flags, ImVec2(0, height))) {
         return;
     }
-    ImGui::TableSetupColumn("База", 0, font_text_width(fonts_.mono, "memhunter_practice.exe+0x1A2B0"));
+    ImGui::TableSetupColumn("База", 0, font_text_width(fonts_.mono, "game_client_win64.exe+0x1A2B3C"));
     ImGui::TableSetupColumn("Смещения", ImGuiTableColumnFlags_WidthStretch, 2.4f);
     ImGui::TableSetupColumn("Адрес", ImGuiTableColumnFlags_WidthStretch, 1.6f);
     ImGui::TableSetupColumn("Значение", ImGuiTableColumnFlags_WidthStretch, 1.0f);

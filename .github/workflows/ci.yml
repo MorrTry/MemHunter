@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+      - name: Configure
+        run: cmake --preset release
+      - name: Build
+        run: cmake --build build/release
+      - name: Test
+        run: ctest --test-dir build/release --output-on-failure -j 4
+      - name: Collect
+        run: |
+          mkdir -p dist/MemHunter
+          cp build/release/src/memhunter.exe build/release/src/memhunter_gui.exe README.md LICENSE dist/MemHunter/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MemHunter-windows-x64
+          path: dist/MemHunter
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: MemHunter-windows-x64
+          path: MemHunter
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          zip -r "MemHunter-$TAG-windows-x64.zip" MemHunter
+          gh release create "$TAG" "MemHunter-$TAG-windows-x64.zip" --repo "$GITHUB_REPOSITORY" --title "MemHunter $TAG" --generate-notes

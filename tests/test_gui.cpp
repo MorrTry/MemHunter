@@ -1065,17 +1065,17 @@ TEST_F(GuiScan, WatchExportReadsTheCurrentValues) {
 }
 
 TEST(GuiPicker, EnterOpensTheOnlyProcessShownWhenThePickedOneIsFilteredOut) {
-    const std::vector<ProcessEntry> processes = {{11328, 1, 3, "memhunter_practice.exe"}, {19492, 1, 3, "memhunter_practice.exe"},
+    const std::vector<ProcessEntry> processes = {{11328, 1, 3, "game.exe"}, {19492, 1, 3, "game.exe"},
                                                  {700, 1, 9, "Notepad.exe"}};
 
     const auto restarted = matching_processes(processes, "19492");
     ASSERT_EQ(restarted.size(), 1u);
     EXPECT_EQ(picker_choice(restarted, 11328u), 19492u);
 
-    const auto practice = matching_processes(processes, "PRACTICE");
-    ASSERT_EQ(practice.size(), 2u);
-    EXPECT_EQ(picker_choice(practice, 11328u), 11328u);
-    EXPECT_EQ(picker_choice(practice, std::nullopt), std::nullopt);
+    const auto games = matching_processes(processes, "GAME");
+    ASSERT_EQ(games.size(), 2u);
+    EXPECT_EQ(picker_choice(games, 11328u), 11328u);
+    EXPECT_EQ(picker_choice(games, std::nullopt), std::nullopt);
 
     EXPECT_EQ(matching_processes(processes, "").size(), 3u);
     EXPECT_EQ(picker_choice(matching_processes(processes, "notepad"), std::nullopt), 700u);

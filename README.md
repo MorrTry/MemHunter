@@ -16,19 +16,20 @@ MemHunter предназначен для диагностики, отладки
 включена (так бывает в некоторых окнах администратора, проверка: `whoami /priv`), Windows открывает такому
 процессу почти любой процесс независимо от прав доступа.
 
-Потренироваться можно на отдельной цели с понятными данными и включаемыми защитами:
-[practice/README.md](practice/README.md).
+## Скачать
+
+Готовые `memhunter.exe` и `memhunter_gui.exe` лежат в архиве на странице [Releases](../../releases). Им нужны
+только Windows 10 1607+ x64 и системные DLL, установка не требуется.
 
 ## Сборка
 
 Нужны Windows 10 1607+ (x64), CMake ≥ 3.24, Ninja и компилятор C++20. Проверялся только MinGW-w64 GCC 16.2.0.
 Для MSVC в `CMakeLists.txt` есть флаги, но сборка с MSVC не проверялась.
 
-Портативный набор инструментов, на котором всё собрано и проверено, лежит в `C:\Users\MorrTry\tools`:
-`cmake-4.4.4-windows-x86_64`, `mingw64` (GCC 16.2.0) и `ninja`.
+Подойдут портативные [WinLibs](https://winlibs.com/) GCC (UCRT), CMake и Ninja: распакуйте их и добавьте
+их папки `bin` в `PATH`.
 
 ```sh
-export PATH="/c/Users/MorrTry/tools/cmake-4.4.4-windows-x86_64/bin:/c/Users/MorrTry/tools/mingw64/bin:/c/Users/MorrTry/tools/ninja:$PATH"
 cmake --preset release            # build/release, Ninja, Release
 cmake --build build/release
 cd build/release && ctest --output-on-failure -j 8
@@ -45,17 +46,16 @@ GoogleTest ≥ 1.14 берётся из системы (`find_package`). Есл�
 | `build/release/tests/memhunter_tests.exe` | модульные и интеграционные тесты |
 | `build/release/tests/memhunter_test_target.exe` | отдельный тестовый процесс-мишень, в котором тесты ищут известные данные |
 | `build/release/bench/memhunter_bench.exe` | бенчмарки, см. [bench/README.md](bench/README.md) |
-| `build/release/practice/memhunter_practice.exe` | тренировочная цель, см. [practice/README.md](practice/README.md) |
 
-Опции CMake: `MEMHUNTER_BUILD_TESTS` (ON), `MEMHUNTER_BUILD_BENCH` (ON; бенчмарку нужен тестовый процесс),
-`MEMHUNTER_BUILD_PRACTICE` (ON) и `MEMHUNTER_BUILD_GUI` (ON). Для GUI при первой конфигурации CMake скачивает
+Опции CMake: `MEMHUNTER_BUILD_TESTS` (ON), `MEMHUNTER_BUILD_BENCH` (ON; бенчмарку нужен тестовый процесс)
+и `MEMHUNTER_BUILD_GUI` (ON). Для GUI при первой конфигурации CMake скачивает
 Dear ImGui v1.91.9b (`FetchContent`, архив проверяется по SHA-256), поэтому нужен интернет. С
 `-DMEMHUNTER_BUILD_GUI=OFF` всё остальное собирается без него.
 
 ## Графический интерфейс
 
 `memhunter_gui.exe` — обычное окно Windows (Dear ImGui, Direct3D 11), открывается двойным щелчком. Без
-аргумента сразу предлагает выбрать процесс; можно передать PID или имя: `memhunter_gui.exe memhunter_practice.exe`.
+аргумента сразу предлагает выбрать процесс; можно передать PID или имя: `memhunter_gui.exe notepad.exe`.
 
 | Область | Что показывает |
 |---|---|
@@ -447,7 +447,6 @@ memhunter tui 1234 [-j N]
 | `src/gui` | графический интерфейс: модель (форма поиска, фоновая задача, таблица, сессия), тема, виджеты, вид, окно Win32 + D3D11 |
 | `tests` | GoogleTest; `support/` содержит тестовый процесс-мишень и фейковую память |
 | `bench` | `memhunter_bench` |
-| `practice` | тренировочная цель `memhunter_practice` и упражнения к ней |
 
 ## Ограничения
 
@@ -477,3 +476,7 @@ memhunter tui 1234 [-j N]
 - Структура, как и всё остальное, только читается: значения полей не меняются и не замораживаются.
 - Проверена только сборка MinGW-w64 GCC 16.2.0. Код рассчитан на MSVC, но там не собирался.
 - Чтение 64-битных процессов требует 64-битной сборки MemHunter. 32-битные процессы (WOW64) читаются той же сборкой.
+
+## Лицензия
+
+[MIT](LICENSE).

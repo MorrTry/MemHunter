@@ -1822,8 +1822,7 @@ void View::draw_no_process(float height) {
     ImGui::PushFont(fonts_.heading);
     ImGui::TextUnformatted("Процесс не выбран");
     ImGui::PopFont();
-    ui::muted_wrapped("Выберите программу, память которой хотите изучить. Для тренировки подойдёт memhunter_practice.exe "
-                      "из папки build/release/practice.");
+    ui::muted_wrapped("Выберите программу, память которой хотите изучить.");
     ImGui::Spacing();
     if (ui::button("Выбрать процесс   Ctrl+O", true, ImVec2(width, std::floor(ImGui::GetFrameHeight() * 1.3f)))) {
         show_picker();

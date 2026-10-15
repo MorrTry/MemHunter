@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(MemHunter VERSION 0.1.0 LANGUAGES CXX)
+project(MemHunter VERSION 1.0.0 LANGUAGES CXX)
 
 if(NOT WIN32)
   message(FATAL_ERROR "MemHunter reads process memory through the Windows API and builds only on Windows.")
@@ -19,7 +19,6 @@ endif()
 
 option(MEMHUNTER_BUILD_TESTS "Build unit and integration tests" ON)
 option(MEMHUNTER_BUILD_BENCH "Build the benchmark tool" ON)
-option(MEMHUNTER_BUILD_PRACTICE "Build the practice target process" ON)
 option(MEMHUNTER_BUILD_GUI "Build the graphical interface (downloads Dear ImGui)" ON)
 
 add_library(memhunter_options INTERFACE)
@@ -43,8 +42,4 @@ endif()
 
 if(MEMHUNTER_BUILD_BENCH)
   add_subdirectory(bench)
-endif()
-
-if(MEMHUNTER_BUILD_PRACTICE)
-  add_subdirectory(practice)
 endif()
