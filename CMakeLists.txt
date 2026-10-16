@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(MemHunter VERSION 1.0.0 LANGUAGES CXX)
+project(MemHunter VERSION 1.1.1 LANGUAGES CXX)
 
 if(NOT WIN32)
   message(FATAL_ERROR "MemHunter reads process memory through the Windows API and builds only on Windows.")
