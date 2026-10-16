@@ -10,12 +10,14 @@
 #include "gui/session.hpp"
 #include "support/fake_memory.hpp"
 #include "support/fake_target.hpp"
+#include "support/language_guard.hpp"
 
 namespace mh::gui {
 namespace {
 
 using mh::testing::FakeMemory;
 using mh::testing::FakeTarget;
+using mh::testing::LanguageGuard;
 using namespace std::chrono_literals;
 
 // A process without modules: the inspection looks only at its memory.
@@ -42,6 +44,7 @@ InspectReport three_findings() {
 }
 
 TEST(GuiFindings, CountsInRussian) {
+    LanguageGuard ru{Lang::Russian};
     EXPECT_EQ(count_findings(0), "0 находок");
     EXPECT_EQ(count_findings(1), "1 находка");
     EXPECT_EQ(count_findings(3), "3 находки");
@@ -126,6 +129,8 @@ protected:
         }
     }
 
+    // These tests check the Russian wording of the report, so pin the language.
+    LanguageGuard language_{Lang::Russian};
     FakeMemory memory_;
     NoModules facts_;
 };

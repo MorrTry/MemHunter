@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "common/text.hpp"
+#include "gui/lang.hpp"
 
 namespace mh::gui {
 
@@ -11,14 +12,6 @@ static_assert(static_cast<int>(WatchType::Int8) == static_cast<int>(ValueType::I
               static_cast<int>(WatchType::Double) == static_cast<int>(ValueType::Double));
 
 namespace {
-
-// "1 символ", "2 символа", "5 символов".
-std::string count_of(std::uint64_t count, const char* one, const char* few, const char* many) {
-    const std::uint64_t tens = count % 100;
-    const std::uint64_t ones = count % 10;
-    const char* word = (tens >= 11 && tens <= 14) ? many : ones == 1 ? one : (ones >= 2 && ones <= 4) ? few : many;
-    return std::to_string(count) + " " + word;
-}
 
 bool same_value(const WatchEntry& a, const WatchEntry& b) {
     const bool same_place = a.path || b.path ? a.path == b.path : a.address == b.address;
@@ -103,9 +96,9 @@ WatchEntry watch_entry_for(std::uint64_t address, PatternKind kind, std::uint32_
 
 std::string type_label(const WatchEntry& entry) {
     switch (entry.type) {
-        case WatchType::Ascii: return "ASCII, " + count_of(entry.length, "символ", "символа", "символов");
-        case WatchType::Utf16: return "UTF-16, " + count_of(entry.length, "символ", "символа", "символов");
-        case WatchType::Bytes: return count_of(entry.length, "байт", "байта", "байт");
+        case WatchType::Ascii: return "ASCII, " + plural(entry.length, false, "character", "characters", "символ", "символа", "символов");
+        case WatchType::Utf16: return "UTF-16, " + plural(entry.length, false, "character", "characters", "символ", "символа", "символов");
+        case WatchType::Bytes: return plural(entry.length, false, "byte", "bytes", "байт", "байта", "байт");
         default: return std::string(to_string(entry.type));
     }
 }

@@ -16,12 +16,14 @@
 #include "gui/watch_list.hpp"
 #include "support/fake_memory.hpp"
 #include "support/fake_target.hpp"
+#include "support/language_guard.hpp"
 
 namespace mh::gui {
 namespace {
 
 using mh::testing::FakeMemory;
 using mh::testing::FakeTarget;
+using mh::testing::LanguageGuard;
 using namespace std::chrono_literals;
 
 void put(FakeMemory& memory, std::uint64_t address, std::uint64_t value, unsigned size = 8) {
@@ -266,6 +268,8 @@ protected:
 
     void restart(Session& session) { session.attach(std::make_unique<FakeTarget>(restarted_, 200, "GAME.EXE")); }
 
+    // Some of these tests check the Russian wording of notices, so pin the language.
+    LanguageGuard language_{Lang::Russian};
     FakeMemory game_;
     FakeMemory restarted_;
 };

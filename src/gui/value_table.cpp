@@ -3,15 +3,13 @@
 #include <algorithm>
 #include <span>
 
+#include "gui/lang.hpp"
 #include "gui/results_table.hpp"
 
 namespace mh::gui {
 
 std::string count_addresses(std::uint64_t count) {
-    const std::uint64_t tens = count % 100;
-    const std::uint64_t ones = count % 10;
-    const char* word = (tens >= 11 && tens <= 14) ? "адресов" : ones == 1 ? "адрес" : (ones >= 2 && ones <= 4) ? "адреса" : "адресов";
-    return group_digits(count) + " " + word;
+    return plural(count, true, "address", "addresses", "адрес", "адреса", "адресов");
 }
 
 void ValueTable::assign(std::shared_ptr<const ValueCandidates> candidates) {

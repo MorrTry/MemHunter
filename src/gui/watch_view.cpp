@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include "common/text.hpp"
+#include "gui/lang.hpp"
 #include "gui/view.hpp"
 #include "gui/view_internal.hpp"
 #include "gui/widgets.hpp"
@@ -22,12 +23,13 @@ bool type_segments(WatchType& type, float x) {
     ImGui::SetCursorPosX(x);
     changed |= ui::segments(type, {{WatchType::Float, "float"}, {WatchType::Double, "double"}});
     ImGui::SetCursorPosX(x);
-    changed |= ui::segments(type, {{WatchType::Ascii, "ASCII"}, {WatchType::Utf16, "UTF-16"}, {WatchType::Bytes, "Байты"}});
+    changed |= ui::segments(type, {{WatchType::Ascii, "ASCII"}, {WatchType::Utf16, "UTF-16"}, {WatchType::Bytes, tr("Bytes", "Байты")}});
     return changed;
 }
 
 std::string length_unit(WatchType type) {
-    return std::string(type == WatchType::Bytes ? "байт" : "символов") + ", до " + std::to_string(max_length(type));
+    const char* unit = type == WatchType::Bytes ? tr("bytes", "байт") : tr("characters", "символов");
+    return std::string(unit) + tr(", up to ", ", до ") + std::to_string(max_length(type));
 }
 
 }  // namespace
@@ -118,34 +120,37 @@ void View::handle_watch_shortcuts(bool copy) {
 
 void View::draw_watch_bar(float right_edge) {
     const WatchList& watch = session_.watch();
-    if (ui::button("Добавить адрес…")) {
+    if (ui::button(tr("Add address…", "Добавить адрес…"))) {
         open_add_watch();
     }
     ImGui::SameLine();
-    if (ui::button("Очистить", !watch.empty())) {
+    if (ui::button(tr("Clear", "Очистить"), !watch.empty())) {
         clear_watch_requested_ = true;
     }
     ImGui::SameLine();
-    if (ui::button("Найти указатели…", watch.selected() != nullptr && !session_.busy() && alive_)) {
+    if (ui::button(tr("Find pointers…", "Найти указатели…"), watch.selected() != nullptr && !session_.busy() && alive_)) {
         open_pointer_scan();
     }
-    ImGui::SetItemTooltip("Цепочки указателей к выбранному адресу: по ним адрес находится и после перезапуска программы");
+    ImGui::SetItemTooltip("%s", tr("Pointer chains to the selected address: they still find it after the program restarts",
+                                   "Цепочки указателей к выбранному адресу: по ним адрес находится и после перезапуска программы"));
     ImGui::SameLine();
-    if (ui::button("Структура…", watch.selected() != nullptr)) {
+    if (ui::button(tr("Structure…", "Структура…"), watch.selected() != nullptr)) {
         open_struct_from_selection();
     }
-    ImGui::SetItemTooltip("Разобрать структуру вокруг выбранного адреса.  Ctrl+D");
+    ImGui::SetItemTooltip("%s", tr("Lay out the structure around the selected address.  Ctrl+D",
+                                   "Разобрать структуру вокруг выбранного адреса.  Ctrl+D"));
     ImGui::SameLine(0.0f, 20.0f * scale_);
     ImGui::AlignTextToFramePadding();
-    const std::string count = watch.empty() ? std::string("Список пуст") : "В списке " + count_addresses(watch.rows().size());
+    const std::string count = watch.empty() ? std::string(tr("The list is empty", "Список пуст"))
+                                             : tr("In the list ", "В списке ") + count_addresses(watch.rows().size());
     const float count_end = ImGui::GetCursorPosX() + ImGui::CalcTextSize(count.c_str()).x;
     ui::muted(count_end <= right_edge ? count : std::string());
-    const char* hint = "Рамка — значение менялось за 2 с";
+    const char* hint = tr("Box — the value changed within 2 s", "Рамка — значение менялось за 2 с");
     const float hint_x = right_edge - ImGui::CalcTextSize(hint).x;
     if (!watch.empty() && hint_x > count_end + 20.0f * scale_) {
         ImGui::SameLine(hint_x);
         ui::muted(hint);
-        ImGui::SetItemTooltip("Значения перечитываются дважды в секунду");
+        ImGui::SetItemTooltip("%s", tr("Values are re-read twice a second", "Значения перечитываются дважды в секунду"));
     }
 }
 
@@ -156,8 +161,10 @@ void View::draw_watch_table(float height) {
     }
     if (watch.empty()) {
         ImGui::BeginChild("##no_watch", ImVec2(0, height), ImGuiChildFlags_Borders, kPanel);
-        ui::muted_wrapped("Здесь будут адреса, за которыми вы следите. Добавьте их из результатов поиска правой кнопкой мыши "
-                          "или клавишей Insert, либо введите адрес сами кнопкой «Добавить адрес…».");
+        ui::muted_wrapped(tr("Here will be the addresses you track. Add them from search results with the right mouse button or the "
+                             "Insert key, or type an address yourself with the «Add address…» button.",
+                             "Здесь будут адреса, за которыми вы следите. Добавьте их из результатов поиска правой кнопкой мыши "
+                             "или клавишей Insert, либо введите адрес сами кнопкой «Добавить адрес…»."));
         ImGui::EndChild();
         return;
     }
@@ -183,11 +190,11 @@ void View::draw_watch_table(float height) {
     if (!ImGui::BeginTable("##watch", 5, flags, ImVec2(0, height))) {
         return;
     }
-    ImGui::TableSetupColumn("Описание", ImGuiTableColumnFlags_WidthStretch, 1.8f);
-    ImGui::TableSetupColumn("Адрес", 0, font_text_width(fonts_.mono, "P->0x0000000000000000"));
-    ImGui::TableSetupColumn("Тип", ImGuiTableColumnFlags_WidthStretch, 1.4f);
-    ImGui::TableSetupColumn("Значение", ImGuiTableColumnFlags_WidthStretch, 4.0f);
-    ImGui::TableSetupColumn("Модуль", ImGuiTableColumnFlags_WidthStretch, 1.3f);
+    ImGui::TableSetupColumn(tr("Description", "Описание"), ImGuiTableColumnFlags_WidthStretch, 1.8f);
+    ImGui::TableSetupColumn(tr("Address", "Адрес"), 0, font_text_width(fonts_.mono, "P->0x0000000000000000"));
+    ImGui::TableSetupColumn(tr("Type", "Тип"), ImGuiTableColumnFlags_WidthStretch, 1.4f);
+    ImGui::TableSetupColumn(tr("Value", "Значение"), ImGuiTableColumnFlags_WidthStretch, 4.0f);
+    ImGui::TableSetupColumn(tr("Module", "Модуль"), ImGuiTableColumnFlags_WidthStretch, 1.3f);
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableHeadersRow();
 
@@ -235,30 +242,30 @@ void View::draw_watch_table(float height) {
                 start_editing_description(index);
             }
             if (ImGui::BeginPopupContextItem("##menu")) {
-                if (ImGui::MenuItem("Изменить описание", "F2")) {
+                if (ImGui::MenuItem(tr("Edit description", "Изменить описание"), "F2")) {
                     start_editing_description(index);
                 }
-                if (ImGui::MenuItem("Копировать адрес", "Ctrl+C")) {
+                if (ImGui::MenuItem(tr("Copy address", "Копировать адрес"), "Ctrl+C")) {
                     copy_address(entry.address);
                 }
-                if (ImGui::MenuItem("Копировать значение", nullptr, false, watch.readable(index))) {
+                if (ImGui::MenuItem(tr("Copy value", "Копировать значение"), nullptr, false, watch.readable(index))) {
                     ImGui::SetClipboardText(watch.value_text(index).c_str());
                 }
-                if (entry.path && ImGui::MenuItem("Копировать цепочку")) {
+                if (entry.path && ImGui::MenuItem(tr("Copy chain", "Копировать цепочку"))) {
                     ImGui::SetClipboardText(format_pointer_path(*entry.path).c_str());
                 }
                 ImGui::Separator();
-                if (ImGui::MenuItem("Найти указатели…", nullptr, false, !session_.busy() && alive_)) {
+                if (ImGui::MenuItem(tr("Find pointers…", "Найти указатели…"), nullptr, false, !session_.busy() && alive_)) {
                     open_pointer_scan();
                 }
-                if (ImGui::MenuItem("Разобрать структуру…", "Ctrl+D")) {
+                if (ImGui::MenuItem(tr("Lay out structure…", "Разобрать структуру…"), "Ctrl+D")) {
                     open_struct_from_selection();
                 }
-                if (ImGui::MenuItem("Дизассемблировать")) {
+                if (ImGui::MenuItem(tr("Disassemble", "Дизассемблировать"))) {
                     disassemble_at(entry.address);
                 }
                 ImGui::Separator();
-                if (ImGui::MenuItem("Удалить", "Del")) {
+                if (ImGui::MenuItem(tr("Remove", "Удалить"), "Del")) {
                     remove_row = index;
                 }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
@@ -302,7 +309,7 @@ void View::draw_watch_table(float height) {
             ui::text(watch.address_text(index));
             ImGui::PopFont();
             if (entry.path) {
-                ImGui::SetItemTooltip("%s", ("Адрес по цепочке " + format_pointer_path(*entry.path)).c_str());
+                ImGui::SetItemTooltip("%s", (tr("Address via chain ", "Адрес по цепочке ") + format_pointer_path(*entry.path)).c_str());
             }
 
             ImGui::TableSetColumnIndex(2);
@@ -353,23 +360,24 @@ void View::draw_watch_table(float height) {
 void View::draw_watch_info(std::size_t row, float value_x) {
     WatchList& watch = session_.watch();
     const WatchEntry& entry = watch.rows()[row];
-    ui::heading(fonts_.heading, "АДРЕС");
+    ui::heading(fonts_.heading, tr("ADDRESS", "АДРЕС"));
     if (entry.path) {
         const std::string path = format_pointer_path(*entry.path);
-        ui::field("Цепочка", path, value_x, fonts_.mono);
+        ui::field(tr("Chain", "Цепочка"), path, value_x, fonts_.mono);
         ImGui::SetItemTooltip("%s", path.c_str());
-        ui::field("Адрес", watch.resolved(row) ? format_address(entry.address) : std::string("цепочка никуда не ведёт"), value_x,
-                  fonts_.mono);
+        ui::field(tr("Address", "Адрес"),
+                  watch.resolved(row) ? format_address(entry.address) : std::string(tr("the chain leads nowhere", "цепочка никуда не ведёт")),
+                  value_x, fonts_.mono);
     } else {
-        ui::field("Адрес", format_address(entry.address), value_x, fonts_.mono);
+        ui::field(tr("Address", "Адрес"), format_address(entry.address), value_x, fonts_.mono);
     }
-    ui::field("Описание", entry.description.empty() ? std::string_view("—") : std::string_view(entry.description), value_x);
-    ui::muted("Сейчас");
+    ui::field(tr("Description", "Описание"), entry.description.empty() ? std::string_view("—") : std::string_view(entry.description), value_x);
+    ui::muted(tr("Now", "Сейчас"));
     ImGui::SameLine(value_x);
     if (!watch.read(row)) {
         ui::muted("—");
     } else if (!watch.readable(row)) {
-        ui::muted("не читается");
+        ui::muted(tr("unreadable", "не читается"));
     } else {
         const bool mono = entry.type == WatchType::Bytes;
         if (mono) {
@@ -391,7 +399,7 @@ void View::draw_watch_info(std::size_t row, float value_x) {
     }
 
     ImGui::Spacing();
-    ui::field("Тип", type_label(entry), value_x);
+    ui::field(tr("Type", "Тип"), type_label(entry), value_x);
     WatchType type = entry.type;
     if (type_segments(type, ImGui::GetCursorPosX())) {
         // The new type covers the same bytes where it can.
@@ -400,7 +408,7 @@ void View::draw_watch_info(std::size_t row, float value_x) {
     }
     if (has_length(entry.type)) {
         ImGui::AlignTextToFramePadding();
-        ui::muted("Длина");
+        ui::muted(tr("Length", "Длина"));
         ImGui::SameLine(value_x);
         int length = static_cast<int>(entry.length);
         ImGui::SetNextItemWidth(std::floor(70.0f * scale_));
@@ -424,9 +432,9 @@ void View::draw_add_watch() {
     bool submit = enter_pressed();
     const float value_x = std::floor(100.0f * scale_);
 
-    ui::heading(fonts_.heading, "ДОБАВИТЬ АДРЕС");
+    ui::heading(fonts_.heading, tr("ADD ADDRESS", "ДОБАВИТЬ АДРЕС"));
     ImGui::AlignTextToFramePadding();
-    ui::muted("Адрес");
+    ui::muted(tr("Address", "Адрес"));
     ImGui::SameLine(value_x);
     ImGui::SetNextItemWidth(-FLT_MIN);
     if (add_watch_focus_) {
@@ -438,13 +446,13 @@ void View::draw_add_watch() {
     ImGui::PopFont();
 
     ImGui::AlignTextToFramePadding();
-    ui::muted("Тип");
+    ui::muted(tr("Type", "Тип"));
     ImGui::SameLine(value_x);
     type_segments(add_type_, value_x);
 
     if (has_length(add_type_)) {
         ImGui::AlignTextToFramePadding();
-        ui::muted("Длина");
+        ui::muted(tr("Length", "Длина"));
         ImGui::SameLine(value_x);
         ImGui::SetNextItemWidth(std::floor(70.0f * scale_));
         ImGui::InputInt("##add_length", &add_length_, 0, 0);
@@ -453,17 +461,17 @@ void View::draw_add_watch() {
     }
 
     ImGui::AlignTextToFramePadding();
-    ui::muted("Описание");
+    ui::muted(tr("Description", "Описание"));
     ImGui::SameLine(value_x);
     ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##add_description", "необязательно", &add_description_);
+    ImGui::InputTextWithHint("##add_description", tr("optional", "необязательно"), &add_description_);
 
     if (!add_error_.empty()) {
         ImGui::Spacing();
         ui::inverted_block(add_error_);
     }
     ImGui::Spacing();
-    const int pressed = dialog_buttons("Добавить", "Отмена");
+    const int pressed = dialog_buttons(tr("Add", "Добавить"), tr("Cancel", "Отмена"));
     submit |= pressed == 0;
     close |= pressed == 1;
 
@@ -475,7 +483,9 @@ void View::draw_add_watch() {
             scroll_to_selection_ = true;
             close = true;
         } else {
-            add_error_ = add_address_.empty() ? "Введите адрес." : "Адрес — шестнадцатеричное число, например 0x7FF6A0001000.";
+            add_error_ = add_address_.empty() ? tr("Enter an address.", "Введите адрес.")
+                                              : tr("The address is a hexadecimal number, for example 0x7FF6A0001000.",
+                                                   "Адрес — шестнадцатеричное число, например 0x7FF6A0001000.");
             add_watch_focus_ = true;
         }
     }
@@ -493,15 +503,15 @@ void View::draw_clear_watch() {
     }
     WatchList& watch = session_.watch();
     bool close = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
-    ui::heading(fonts_.heading, "ОЧИСТИТЬ СПИСОК");
-    ui::text("Убрать из списка " + count_addresses(watch.rows().size()) + "?");
-    ui::muted("Описания тоже пропадут.");
+    ui::heading(fonts_.heading, tr("CLEAR THE LIST", "ОЧИСТИТЬ СПИСОК"));
+    ui::text(tr("Remove ", "Убрать из списка ") + count_addresses(watch.rows().size()) + tr(" from the list?", "?"));
+    ui::muted(tr("The descriptions will be gone too.", "Описания тоже пропадут."));
     ImGui::Spacing();
-    const int pressed = dialog_buttons("Очистить", "Отмена");
+    const int pressed = dialog_buttons(tr("Clear", "Очистить"), tr("Cancel", "Отмена"));
     if (pressed == 0 || (enter_pressed() && !close)) {
         watch.clear();
         editing_row_.reset();
-        session_.set_notice("Список адресов очищен", false);
+        session_.set_notice(tr("The address list is cleared", "Список адресов очищен"), false);
         close = true;
     }
     close |= pressed == 1;

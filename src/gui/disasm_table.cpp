@@ -2,18 +2,13 @@
 
 #include <algorithm>
 
+#include "gui/lang.hpp"
 #include "gui/results_table.hpp"
 
 namespace mh::gui {
 
 std::string count_instructions(std::uint64_t count) {
-    const std::uint64_t tens = count % 100;
-    const std::uint64_t ones = count % 10;
-    const char* word = (tens >= 11 && tens <= 14) ? "инструкций"
-                       : ones == 1               ? "инструкция"
-                       : (ones >= 2 && ones <= 4) ? "инструкции"
-                                                  : "инструкций";
-    return group_digits(count) + " " + word;
+    return plural(count, true, "instruction", "instructions", "инструкция", "инструкции", "инструкций");
 }
 
 void DisasmTable::assign(std::uint64_t address, bool wow64, std::vector<DisasmLine> lines) {

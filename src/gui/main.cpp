@@ -20,6 +20,7 @@
 
 #include "common/error.hpp"
 #include "common/text.hpp"
+#include "gui/lang.hpp"
 #include "gui/session.hpp"
 #include "gui/theme.hpp"
 #include "gui/view.hpp"
@@ -82,7 +83,7 @@ public:
     ComScope() {
         const HRESULT result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
         if (FAILED(result)) {
-            throw_hresult("COM не инициализирован", result);
+            throw_hresult(mh::gui::tr("COM was not initialized", "COM не инициализирован"), result);
         }
     }
     ~ComScope() { CoUninitialize(); }
@@ -114,7 +115,7 @@ public:
                                                    &swap_chain_, &device_, &level, &context_);
         }
         if (FAILED(result)) {
-            throw_hresult("не удалось создать устройство Direct3D 11", result);
+            throw_hresult(mh::gui::tr("could not create the Direct3D 11 device", "не удалось создать устройство Direct3D 11"), result);
         }
         create_target();
     }
@@ -126,7 +127,7 @@ public:
         target_.Reset();
         const HRESULT result = swap_chain_->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
         if (FAILED(result)) {
-            throw_hresult("не удалось изменить размер буферов окна", result);
+            throw_hresult(mh::gui::tr("could not resize the window buffers", "не удалось изменить размер буферов окна"), result);
         }
         create_target();
     }
@@ -143,7 +144,7 @@ public:
             return false;
         }
         if (FAILED(result)) {
-            throw_hresult("видеодрайвер сбросил устройство вывода", result);
+            throw_hresult(mh::gui::tr("the video driver reset the output device", "видеодрайвер сбросил устройство вывода"), result);
         }
         return true;
     }
@@ -158,7 +159,7 @@ private:
             result = device_->CreateRenderTargetView(back_buffer.Get(), nullptr, &target_);
         }
         if (FAILED(result)) {
-            throw_hresult("не удалось подготовить буфер окна", result);
+            throw_hresult(mh::gui::tr("could not prepare the window buffer", "не удалось подготовить буфер окна"), result);
         }
     }
 
@@ -176,12 +177,12 @@ public:
         std::wstring buffer(32768, L'\0');
         std::copy_n(suggested_name.begin(), std::min(suggested_name.size(), buffer.size() - 1), buffer.begin());
         OPENFILENAMEW dialog = file_dialog(buffer, kind);
-        dialog.lpstrTitle = kind == mh::gui::FileKind::Pointers    ? L"Сохранение указателей"
-                            : kind == mh::gui::FileKind::Structure ? L"Сохранение структуры"
-                                                                   : L"Экспорт результатов";
+        dialog.lpstrTitle = kind == mh::gui::FileKind::Pointers    ? mh::gui::tr(L"Save pointers", L"Сохранение указателей")
+                            : kind == mh::gui::FileKind::Structure ? mh::gui::tr(L"Save structure", L"Сохранение структуры")
+                                                                   : mh::gui::tr(L"Export results", L"Экспорт результатов");
         dialog.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
         if (!GetSaveFileNameW(&dialog)) {
-            return cancelled_or_failed("окно сохранения не открылось");
+            return cancelled_or_failed(mh::gui::tr("the save dialog did not open", "окно сохранения не открылось"));
         }
         buffer.resize(std::wcslen(buffer.c_str()));
         return std::filesystem::path(buffer);
@@ -190,10 +191,11 @@ public:
     std::optional<std::filesystem::path> ask_open_path(mh::gui::FileKind kind) override {
         std::wstring buffer(32768, L'\0');
         OPENFILENAMEW dialog = file_dialog(buffer, kind);
-        dialog.lpstrTitle = kind == mh::gui::FileKind::Structure ? L"Загрузка структуры" : L"Загрузка указателей";
+        dialog.lpstrTitle = kind == mh::gui::FileKind::Structure ? mh::gui::tr(L"Load structure", L"Загрузка структуры")
+                                                                 : mh::gui::tr(L"Load pointers", L"Загрузка указателей");
         dialog.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
         if (!GetOpenFileNameW(&dialog)) {
-            return cancelled_or_failed("окно открытия файла не открылось");
+            return cancelled_or_failed(mh::gui::tr("the open-file dialog did not open", "окно открытия файла не открылось"));
         }
         buffer.resize(std::wcslen(buffer.c_str()));
         return std::filesystem::path(buffer);
@@ -206,9 +208,15 @@ public:
 
 private:
     OPENFILENAMEW file_dialog(std::wstring& buffer, mh::gui::FileKind kind) const {
-        static constexpr wchar_t exports[] = L"JSON (*.json)\0*.json\0CSV (*.csv)\0*.csv\0Текст (*.txt)\0*.txt\0";
-        static constexpr wchar_t pointers[] = L"Указатели MemHunter (*.mhp)\0*.mhp\0";
-        static constexpr wchar_t structures[] = L"Структуры MemHunter (*.mhst)\0*.mhst\0Все файлы (*.*)\0*.*\0";
+        static constexpr wchar_t exports_en[] = L"JSON (*.json)\0*.json\0CSV (*.csv)\0*.csv\0Text (*.txt)\0*.txt\0";
+        static constexpr wchar_t exports_ru[] = L"JSON (*.json)\0*.json\0CSV (*.csv)\0*.csv\0Текст (*.txt)\0*.txt\0";
+        static constexpr wchar_t pointers_en[] = L"MemHunter pointers (*.mhp)\0*.mhp\0";
+        static constexpr wchar_t pointers_ru[] = L"Указатели MemHunter (*.mhp)\0*.mhp\0";
+        static constexpr wchar_t structures_en[] = L"MemHunter structures (*.mhst)\0*.mhst\0All files (*.*)\0*.*\0";
+        static constexpr wchar_t structures_ru[] = L"Структуры MemHunter (*.mhst)\0*.mhst\0Все файлы (*.*)\0*.*\0";
+        const wchar_t* exports = mh::gui::tr(exports_en, exports_ru);
+        const wchar_t* pointers = mh::gui::tr(pointers_en, pointers_ru);
+        const wchar_t* structures = mh::gui::tr(structures_en, structures_ru);
         OPENFILENAMEW dialog{};
         dialog.lStructSize = sizeof(dialog);
         dialog.hwndOwner = hwnd_;
@@ -237,7 +245,7 @@ private:
         if (error == 0) {
             return std::nullopt;
         }
-        throw mh::Error(mh::ErrorCode::SystemError, std::string(what) + " (код " + mh::format_hex(error) + ")");
+        throw mh::Error(mh::ErrorCode::SystemError, std::string(what) + mh::gui::tr(" (code ", " (код ") + mh::format_hex(error) + ")");
     }
 
     HWND hwnd_;
@@ -258,11 +266,11 @@ class BackendScope {
 public:
     BackendScope(HWND hwnd, const Graphics& graphics) {
         if (!ImGui_ImplWin32_Init(hwnd)) {
-            throw mh::Error(mh::ErrorCode::SystemError, "не удалось подключить ImGui к окну");
+            throw mh::Error(mh::ErrorCode::SystemError, mh::gui::tr("could not attach ImGui to the window", "не удалось подключить ImGui к окну"));
         }
         if (!ImGui_ImplDX11_Init(graphics.device(), graphics.context())) {
             ImGui_ImplWin32_Shutdown();
-            throw mh::Error(mh::ErrorCode::SystemError, "не удалось подключить ImGui к Direct3D 11");
+            throw mh::Error(mh::ErrorCode::SystemError, mh::gui::tr("could not attach ImGui to Direct3D 11", "не удалось подключить ImGui к Direct3D 11"));
         }
     }
     ~BackendScope() {
@@ -367,7 +375,7 @@ HWND create_window(HINSTANCE instance, WindowState& state) {
     window_class.hIconSm = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(1), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
                                                          GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
     if (RegisterClassExW(&window_class) == 0) {
-        mh::throw_win32(mh::ErrorCode::SystemError, "не удалось зарегистрировать класс окна", GetLastError());
+        mh::throw_win32(mh::ErrorCode::SystemError, mh::gui::tr("could not register the window class", "не удалось зарегистрировать класс окна"), GetLastError());
     }
 
     POINT cursor{};
@@ -387,7 +395,7 @@ HWND create_window(HINSTANCE instance, WindowState& state) {
     HWND hwnd = CreateWindowExW(0, kWindowClass, L"MemHunter", WS_OVERLAPPEDWINDOW, work.left + (work_width - width) / 2,
                                 work.top + (work_height - height) / 2, width, height, nullptr, nullptr, instance, &state);
     if (hwnd == nullptr) {
-        mh::throw_win32(mh::ErrorCode::SystemError, "не удалось создать окно", GetLastError());
+        mh::throw_win32(mh::ErrorCode::SystemError, mh::gui::tr("could not create the window", "не удалось создать окно"), GetLastError());
     }
     state.scale = ImGui_ImplWin32_GetDpiScaleForHwnd(hwnd);
     style_caption(hwnd);
@@ -398,7 +406,7 @@ std::vector<std::wstring> command_line_arguments() {
     int count = 0;
     LPWSTR* arguments = CommandLineToArgvW(GetCommandLineW(), &count);
     if (arguments == nullptr) {
-        mh::throw_win32(mh::ErrorCode::SystemError, "не удалось разобрать командную строку", GetLastError());
+        mh::throw_win32(mh::ErrorCode::SystemError, mh::gui::tr("could not parse the command line", "не удалось разобрать командную строку"), GetLastError());
     }
     std::vector<std::wstring> result(arguments, arguments + count);
     LocalFree(arguments);
@@ -518,7 +526,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     try {
         return run(instance, show);
     } catch (const std::exception& error) {
-        const std::wstring text = L"MemHunter не может продолжить работу:\n\n" + mh::utf8_to_wide(error.what());
+        const std::wstring text =
+            mh::gui::tr(L"MemHunter cannot continue:\n\n", L"MemHunter не может продолжить работу:\n\n") + mh::utf8_to_wide(error.what());
         MessageBoxW(nullptr, text.c_str(), L"MemHunter", MB_OK | MB_ICONERROR);
         return 1;
     }

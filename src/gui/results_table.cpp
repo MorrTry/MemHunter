@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "common/text.hpp"
+#include "gui/lang.hpp"
 
 namespace mh::gui {
 
@@ -21,10 +22,10 @@ std::string_view kind_name(PatternKind kind) {
     switch (kind) {
         case PatternKind::Ascii: return "ASCII";
         case PatternKind::Utf16: return "UTF-16";
-        case PatternKind::Bytes: return "байты";
-        case PatternKind::Signature: return "сигнатура";
-        case PatternKind::StringsAscii: return "строка ASCII";
-        case PatternKind::StringsUtf16: return "строка UTF-16";
+        case PatternKind::Bytes: return tr("bytes", "байты");
+        case PatternKind::Signature: return tr("signature", "сигнатура");
+        case PatternKind::StringsAscii: return tr("ASCII string", "строка ASCII");
+        case PatternKind::StringsUtf16: return tr("UTF-16 string", "строка UTF-16");
     }
     return "?";
 }
@@ -42,15 +43,12 @@ std::string group_digits(std::uint64_t value) {
 }
 
 std::string count_matches(std::uint64_t count) {
-    const std::uint64_t tens = count % 100;
-    const std::uint64_t ones = count % 10;
-    const char* word = (tens >= 11 && tens <= 14) ? "совпадений" : ones == 1 ? "совпадение" : (ones >= 2 && ones <= 4) ? "совпадения" : "совпадений";
-    return group_digits(count) + " " + word;
+    return plural(count, true, "match", "matches", "совпадение", "совпадения", "совпадений");
 }
 
 std::string format_seconds(double seconds) {
     char buffer[32];
-    std::snprintf(buffer, sizeof(buffer), "%.2f с", seconds);
+    std::snprintf(buffer, sizeof(buffer), tr("%.2f s", "%.2f с"), seconds);
     return buffer;
 }
 

@@ -75,6 +75,7 @@ target_include_directories(memhunter_tui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(memhunter_tui PUBLIC memhunter_core)
 
 add_library(memhunter_gui_model STATIC
+  gui/lang.cpp
   gui/search.cpp
   gui/results_table.cpp
   gui/value_table.cpp

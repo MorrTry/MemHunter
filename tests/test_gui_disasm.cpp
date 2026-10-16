@@ -10,12 +10,14 @@
 #include "gui/session.hpp"
 #include "support/fake_memory.hpp"
 #include "support/fake_target.hpp"
+#include "support/language_guard.hpp"
 
 namespace mh::gui {
 namespace {
 
 using mh::testing::FakeMemory;
 using mh::testing::FakeTarget;
+using mh::testing::LanguageGuard;
 
 constexpr std::uint64_t kBase = 0x140000000;
 
@@ -26,6 +28,7 @@ DisasmLine line(std::uint64_t address) {
 }
 
 TEST(GuiDisasm, CountsInRussian) {
+    LanguageGuard ru{Lang::Russian};
     EXPECT_EQ(count_instructions(0), "0 инструкций");
     EXPECT_EQ(count_instructions(1), "1 инструкция");
     EXPECT_EQ(count_instructions(3), "3 инструкции");
@@ -108,6 +111,7 @@ TEST(GuiDisasm, DecodesCodeAndAnnotatesBranchTarget) {
 }
 
 TEST(GuiDisasm, SaysWhenNothingCanBeRead) {
+    LanguageGuard ru{Lang::Russian};
     FakeMemory memory;
     memory.add(kBase, 0x1000, page::ReadWrite);
     Session session;

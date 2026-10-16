@@ -7,6 +7,7 @@
 
 #include "common/error.hpp"
 #include "common/text.hpp"
+#include "gui/lang.hpp"
 #include "gui/view.hpp"
 #include "gui/view_internal.hpp"
 #include "gui/widgets.hpp"
@@ -15,8 +16,14 @@ namespace mh::gui {
 
 namespace {
 
-constexpr const char* kBaseError = "База — адрес (0x1F4A2C3B0D8) или цепочка вида [[game.exe+0x52080]+0x8].";
-constexpr const char* kBaseHint = "[[game.exe+0x52080]+0x8] или 0x1F4A2C3B0D8";
+const char* base_error() {
+    return tr("The base is an address (0x1F4A2C3B0D8) or a chain like [[game.exe+0x52080]+0x8].",
+              "База — адрес (0x1F4A2C3B0D8) или цепочка вида [[game.exe+0x52080]+0x8].");
+}
+
+const char* base_hint() {
+    return tr("[[game.exe+0x52080]+0x8] or 0x1F4A2C3B0D8", "[[game.exe+0x52080]+0x8] или 0x1F4A2C3B0D8");
+}
 
 std::string trimmed(const std::string& text) {
     const auto first = text.find_first_not_of(" \t");
@@ -182,7 +189,7 @@ void View::copy_struct_field(std::size_t row) {
     const std::string text = structure.path_text(row, 0);
     ImGui::SetClipboardText(text.c_str());
     const bool address = structure.path_to(row, 0).module.empty() && structure.field_address(row, 0).has_value();
-    session_.set_notice((address ? "Адрес скопирован: " : "Цепочка скопирована: ") + text, false);
+    session_.set_notice((address ? tr("Address copied: ", "Адрес скопирован: ") : tr("Chain copied: ", "Цепочка скопирована: ")) + text, false);
 }
 
 void View::handle_struct_shortcuts(bool copy) {
@@ -231,33 +238,36 @@ void View::handle_struct_shortcuts(bool copy) {
 void View::draw_struct_bar(float right_edge) {
     const StructTable& structure = session_.structure();
     const bool active = structure.active();
-    if (ui::button("Открыть…", session_.target() != nullptr)) {
+    if (ui::button(tr("Open…", "Открыть…"), session_.target() != nullptr)) {
         open_struct_dialog(std::nullopt);
     }
-    ImGui::SetItemTooltip("Разобрать структуру по адресу или цепочке.  Ctrl+D на вкладках «Адреса», «Указатели» и «Результаты»");
+    ImGui::SetItemTooltip("%s", tr("Lay out a structure at an address or chain.  Ctrl+D on the «Addresses», «Pointers» and «Results» tabs",
+                                   "Разобрать структуру по адресу или цепочке.  Ctrl+D на вкладках «Адреса», «Указатели» и «Результаты»"));
     ImGui::SameLine();
-    if (ui::button("Сравнить…", active && structure.instances() < kMaxInstances)) {
+    if (ui::button(tr("Compare…", "Сравнить…"), active && structure.instances() < kMaxInstances)) {
         open_instance_dialog();
     }
-    ImGui::SetItemTooltip("Та же структура по другому адресу — столбцом рядом, до 4 столбцов");
+    ImGui::SetItemTooltip("%s", tr("The same structure at another address — as a column beside it, up to 4 columns",
+                                   "Та же структура по другому адресу — столбцом рядом, до 4 столбцов"));
     ImGui::SameLine();
     const std::size_t defined = active ? structure.definition().fields.size() : 0;
-    if (ui::button("Сохранить…", defined > 0)) {
+    if (ui::button(tr("Save…", "Сохранить…"), defined > 0)) {
         save_structure();
     }
-    ImGui::SetItemTooltip("Заданные поля в файл .mhst.  Ctrl+S");
+    ImGui::SetItemTooltip("%s", tr("The defined fields to an .mhst file.  Ctrl+S", "Заданные поля в файл .mhst.  Ctrl+S"));
     ImGui::SameLine();
-    if (ui::button("Загрузить…", active)) {
+    if (ui::button(tr("Load…", "Загрузить…"), active)) {
         load_structure();
     }
-    ImGui::SetItemTooltip("Поля из файла .mhst поверх открытой структуры");
+    ImGui::SetItemTooltip("%s", tr("Fields from an .mhst file over the open structure", "Поля из файла .mhst поверх открытой структуры"));
     ImGui::SameLine(0.0f, 20.0f * scale_);
     ImGui::AlignTextToFramePadding();
     const std::string count =
-        active ? "Строк: " + group_digits(structure.rows().size()) + ", задано полей: " + std::to_string(defined) : "Структура не открыта";
+        active ? tr("Rows: ", "Строк: ") + group_digits(structure.rows().size()) + tr(", defined fields: ", ", задано полей: ") + std::to_string(defined)
+               : std::string(tr("No structure open", "Структура не открыта"));
     const float count_end = ImGui::GetCursorPosX() + ImGui::CalcTextSize(count.c_str()).x;
     ui::muted(count_end <= right_edge ? count : std::string());
-    const char* hint = "Рамка — значение менялось за 2 с";
+    const char* hint = tr("Box — the value changed within 2 s", "Рамка — значение менялось за 2 с");
     const float hint_x = right_edge - ImGui::CalcTextSize(hint).x;
     if (active && hint_x > count_end + 20.0f * scale_) {
         ImGui::SameLine(hint_x);
@@ -269,9 +279,12 @@ void View::draw_struct_table(float height) {
     StructTable& structure = session_.structure();
     if (!structure.active()) {
         ImGui::BeginChild("##no_struct", ImVec2(0, height), ImGuiChildFlags_Borders, kPanel);
-        ui::muted_wrapped("Здесь будут поля структуры: смещение, угаданный тип и значение, которое обновляется дважды в секунду. "
-                          "Выберите адрес на вкладке «Адреса», «Указатели» или «Результаты» и нажмите «Разобрать структуру…» "
-                          "(Ctrl+D) или нажмите «Открыть…» и введите адрес или цепочку.");
+        ui::muted_wrapped(tr("Here will be the structure's fields: offset, guessed type, and value, refreshed twice a second. "
+                             "Select an address on the «Addresses», «Pointers» or «Results» tab and press «Lay out structure…» "
+                             "(Ctrl+D), or press «Open…» and enter an address or chain.",
+                             "Здесь будут поля структуры: смещение, угаданный тип и значение, которое обновляется дважды в секунду. "
+                             "Выберите адрес на вкладке «Адреса», «Указатели» или «Результаты» и нажмите «Разобрать структуру…» "
+                             "(Ctrl+D) или нажмите «Открыть…» и введите адрес или цепочку."));
         ImGui::EndChild();
         return;
     }
@@ -287,17 +300,18 @@ void View::draw_struct_table(float height) {
     const std::string base = format_struct_base(structure.base());
     const std::optional<std::uint64_t> start = structure.address(0);
     const std::string current = start && is_chain(structure.base()) ? format_address(*start) : std::string();
-    const std::string size = "размер " + format_hex(structure.size());
-    const char* lost = "цепочка сейчас никуда не ведёт";
+    const std::string size = tr("size ", "размер ") + format_hex(structure.size());
+    const char* lost = tr("the chain leads nowhere now", "цепочка сейчас никуда не ведёт");
+    const char* now_label = tr("now", "сейчас");
     const float base_width = font_text_width(fonts_.mono, base);
     const float current_width = font_text_width(fonts_.mono, current);
-    const float buttons = buttons_width({"Угадать заново", "Как C", "Закрыть"});
-    float room = right - ImGui::GetCursorPosX() - buttons - gap - ImGui::CalcTextSize("База").x - style.ItemSpacing.x - base_width;
+    const float buttons = buttons_width({tr("Guess again", "Угадать заново"), tr("As C", "Как C"), tr("Close", "Закрыть")});
+    float room = right - ImGui::GetCursorPosX() - buttons - gap - ImGui::CalcTextSize(tr("Base", "База")).x - style.ItemSpacing.x - base_width;
     if (!start) {
         room -= gap + ImGui::CalcTextSize(lost).x + std::floor(style.FramePadding.x * 0.5f) * 2.0f;
     }
     // What does not fit goes first the size, then the current address; both stay in the panel below the table.
-    const float current_part = current.empty() ? 0.0f : gap + ImGui::CalcTextSize("сейчас").x + style.ItemSpacing.x + current_width;
+    const float current_part = current.empty() ? 0.0f : gap + ImGui::CalcTextSize(now_label).x + style.ItemSpacing.x + current_width;
     const bool show_current = !current.empty() && room >= current_part;
     if (show_current) {
         room -= current_part;
@@ -308,7 +322,7 @@ void View::draw_struct_table(float height) {
         room -= size_part;
     }
     ImGui::AlignTextToFramePadding();
-    ui::muted("База");
+    ui::muted(tr("Base", "База"));
     ImGui::SameLine();
     ImGui::PushFont(fonts_.mono);
     ui::text(base);
@@ -319,7 +333,7 @@ void View::draw_struct_table(float height) {
     }
     if (show_current) {
         ImGui::SameLine(0.0f, gap);
-        ui::muted("сейчас");
+        ui::muted(now_label);
         ImGui::SameLine();
         ImGui::PushFont(fonts_.mono);
         ui::text(current);
@@ -334,18 +348,20 @@ void View::draw_struct_table(float height) {
     } else {
         ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), right - buttons));
     }
-    if (ui::button("Угадать заново")) {
+    if (ui::button(tr("Guess again", "Угадать заново"))) {
         session_.guess_structure_again();
     }
-    ImGui::SetItemTooltip("Угадать типы незаданных полей по тому, что в них сейчас");
+    ImGui::SetItemTooltip("%s", tr("Guess the types of undefined fields from what is in them now",
+                                   "Угадать типы незаданных полей по тому, что в них сейчас"));
     ImGui::SameLine();
-    if (ui::button("Как C")) {
+    if (ui::button(tr("As C", "Как C"))) {
         ImGui::SetClipboardText(structure.c_declaration().c_str());
-        session_.set_notice("Объявление структуры на C скопировано", false);
+        session_.set_notice(tr("The C struct declaration is copied", "Объявление структуры на C скопировано"), false);
     }
-    ImGui::SetItemTooltip("Скопировать объявление struct на C: заданные поля, а пока их нет — угаданные");
+    ImGui::SetItemTooltip("%s", tr("Copy the struct declaration in C: the defined fields, or the guessed ones while there are none",
+                                   "Скопировать объявление struct на C: заданные поля, а пока их нет — угаданные"));
     ImGui::SameLine();
-    if (ui::button("Закрыть")) {
+    if (ui::button(tr("Close", "Закрыть"))) {
         structure.close();
         return;
     }
@@ -370,12 +386,12 @@ void View::draw_struct_table(float height) {
         ImGui::PopID();
         return;
     }
-    ImGui::TableSetupColumn("Смещение", 0, font_text_width(fonts_.mono, "+ 0x0000") + indent * 2.0f);
-    ImGui::TableSetupColumn("Тип", 0, font_text_width(fonts_.mono, "ascii[4096]"));
-    ImGui::TableSetupColumn("Имя", 0, 150.0f * scale_);
-    ImGui::TableSetupColumn("Значение", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn(tr("Offset", "Смещение"), 0, font_text_width(fonts_.mono, "+ 0x0000") + indent * 2.0f);
+    ImGui::TableSetupColumn(tr("Type", "Тип"), 0, font_text_width(fonts_.mono, "ascii[4096]"));
+    ImGui::TableSetupColumn(tr("Name", "Имя"), 0, 150.0f * scale_);
+    ImGui::TableSetupColumn(tr("Value", "Значение"), ImGuiTableColumnFlags_WidthStretch);
     for (std::size_t i = 1; i < instances; ++i) {
-        ImGui::TableSetupColumn(("Значение " + std::to_string(i + 1)).c_str(), ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn((tr("Value ", "Значение ") + std::to_string(i + 1)).c_str(), ImGuiTableColumnFlags_WidthStretch);
     }
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableHeadersRow();
@@ -421,40 +437,40 @@ void View::draw_struct_table(float height) {
             }
             if (ImGui::BeginPopupContextItem("##menu")) {
                 const bool editable = structure.editable(index);
-                if (ImGui::MenuItem("Изменить поле…", "F2", false, editable)) {
+                if (ImGui::MenuItem(tr("Edit field…", "Изменить поле…"), "F2", false, editable)) {
                     edit_row = index;
                 }
-                if (ImGui::MenuItem("Сбросить к угаданному", "Del", false, editable && field.defined)) {
+                if (ImGui::MenuItem(tr("Reset to guessed", "Сбросить к угаданному"), "Del", false, editable && field.defined)) {
                     forget_row = index;
                 }
                 ImGui::Separator();
-                if (ImGui::MenuItem(structure.expanded(index) ? "Свернуть" : "Раскрыть", "Enter", false, expandable)) {
+                if (ImGui::MenuItem(structure.expanded(index) ? tr("Collapse", "Свернуть") : tr("Expand", "Раскрыть"), "Enter", false, expandable)) {
                     toggle_row = index;
                 }
-                if (ImGui::MenuItem("Разобрать отсюда", nullptr, false, field.type == FieldType::Pointer)) {
+                if (ImGui::MenuItem(tr("Lay out from here", "Разобрать отсюда"), nullptr, false, field.type == FieldType::Pointer)) {
                     dissect_row = index;
                 }
                 const std::optional<std::uint64_t> field_address = structure.field_address(index, 0);
-                if (ImGui::MenuItem("Дизассемблировать", nullptr, false, field_address.has_value())) {
+                if (ImGui::MenuItem(tr("Disassemble", "Дизассемблировать"), nullptr, false, field_address.has_value())) {
                     disassemble_at(*field_address);
                 }
                 ImGui::Separator();
-                if (ImGui::MenuItem("В список адресов", "Insert")) {
+                if (ImGui::MenuItem(tr("To the address list", "В список адресов"), "Insert")) {
                     watch_row = index;
                 }
-                if (ImGui::MenuItem(is_chain(structure.path_to(index, 0)) ? "Копировать цепочку" : "Копировать адрес", "Ctrl+C")) {
+                if (ImGui::MenuItem(is_chain(structure.path_to(index, 0)) ? tr("Copy chain", "Копировать цепочку") : tr("Copy address", "Копировать адрес"), "Ctrl+C")) {
                     copy_struct_field(index);
                 }
                 const std::string value = structure.value_text(index, 0);
-                if (ImGui::MenuItem("Копировать значение", nullptr, false, !value.empty() && value != "??")) {
+                if (ImGui::MenuItem(tr("Copy value", "Копировать значение"), nullptr, false, !value.empty() && value != "??")) {
                     ImGui::SetClipboardText(value.c_str());
                 }
-                if (ImGui::MenuItem("Копировать как C")) {
+                if (ImGui::MenuItem(tr("Copy as C", "Копировать как C"))) {
                     ImGui::SetClipboardText(structure.c_declaration().c_str());
-                    session_.set_notice("Объявление структуры на C скопировано", false);
+                    session_.set_notice(tr("The C struct declaration is copied", "Объявление структуры на C скопировано"), false);
                 }
                 ImGui::Separator();
-                if (ImGui::MenuItem("Угадать заново")) {
+                if (ImGui::MenuItem(tr("Guess again", "Угадать заново"))) {
                     guess = true;
                 }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
@@ -474,7 +490,8 @@ void View::draw_struct_table(float height) {
                 if (ImGui::InvisibleButton("##toggle", ImVec2(marker, row_height))) {
                     toggle_row = index;
                 }
-                ImGui::SetItemTooltip(structure.expanded(index) ? "Свернуть" : "Раскрыть структуру, куда ведёт указатель");
+                ImGui::SetItemTooltip("%s", structure.expanded(index) ? tr("Collapse", "Свернуть")
+                                                                       : tr("Expand the structure the pointer leads to", "Раскрыть структуру, куда ведёт указатель"));
                 ImGui::SetCursorPos(ImVec2(x, row_start.y + mono_offset));
                 ui::text(structure.expanded(index) ? "-" : "+");
             }
@@ -554,9 +571,9 @@ void View::draw_struct_table(float height) {
     } else if (dissect_row) {
         if (structure.dissect(*dissect_row)) {
             session_.refresh_structure(StructTable::Clock::now());
-            session_.set_notice("Структура " + format_struct_base(structure.base()), false);
+            session_.set_notice(tr("Structure ", "Структура ") + format_struct_base(structure.base()), false);
         } else {
-            session_.set_notice("Цепочка вышла бы длиннее " + std::to_string(kMaxPathOffsets) + " указателей", true);
+            session_.set_notice(tr("The chain would come out longer than ", "Цепочка вышла бы длиннее ") + std::to_string(kMaxPathOffsets) + tr(" pointers", " указателей"), true);
         }
     } else if (watch_row) {
         session_.add_struct_watch(*watch_row, 0);
@@ -570,25 +587,26 @@ void View::draw_struct_info(std::size_t row, float value_x) {
     const StructRow& at = structure.rows()[row];
     const StructField& field = at.field;
     const auto now = StructTable::Clock::now();
-    ui::heading(fonts_.heading, "ПОЛЕ");
-    ui::field("Смещение", format_hex(field.offset) + (at.depth > 0 ? "   глубина " + std::to_string(at.depth) : std::string()), value_x,
+    ui::heading(fonts_.heading, tr("FIELD", "ПОЛЕ"));
+    ui::field(tr("Offset", "Смещение"),
+              format_hex(field.offset) + (at.depth > 0 ? tr("   depth ", "   глубина ") + std::to_string(at.depth) : std::string()), value_x,
               fonts_.mono);
-    ui::field("Тип", field_type_name(field) + (field.defined ? "" : "   угадан"), value_x);
-    ui::field("Имя", field.name.empty() ? std::string_view("—") : std::string_view(field.name), value_x);
+    ui::field(tr("Type", "Тип"), field_type_name(field) + (field.defined ? "" : tr("   guessed", "   угадан")), value_x);
+    ui::field(tr("Name", "Имя"), field.name.empty() ? std::string_view("—") : std::string_view(field.name), value_x);
     const PointerPath path = structure.path_to(row, 0);
     const std::optional<std::uint64_t> address = structure.field_address(row, 0);
     if (is_chain(path)) {
         const std::string text = format_pointer_path(path);
-        ui::field("Цепочка", text, value_x, fonts_.mono);
+        ui::field(tr("Chain", "Цепочка"), text, value_x, fonts_.mono);
         ImGui::SetItemTooltip("%s", text.c_str());
-        ui::field("Адрес", address ? format_address(*address) : std::string("цепочка сейчас никуда не ведёт"), value_x,
-                  address ? fonts_.mono : nullptr);
+        ui::field(tr("Address", "Адрес"), address ? format_address(*address) : std::string(tr("the chain leads nowhere now", "цепочка сейчас никуда не ведёт")),
+                  value_x, address ? fonts_.mono : nullptr);
     } else {
-        ui::field("Адрес", address ? format_address(*address) : std::string("—"), value_x, fonts_.mono);
+        ui::field(tr("Address", "Адрес"), address ? format_address(*address) : std::string("—"), value_x, fonts_.mono);
     }
     const bool mono = mono_value(field.type);
     for (std::size_t i = 0; i < structure.instances(); ++i) {
-        ui::muted(i == 0 ? std::string("Сейчас") : "Столбец " + std::to_string(i + 1));
+        ui::muted(i == 0 ? std::string(tr("Now", "Сейчас")) : tr("Column ", "Столбец ") + std::to_string(i + 1));
         ImGui::SameLine(value_x);
         const std::string value = structure.value_text(row, i);
         if (value.empty()) {
@@ -596,7 +614,7 @@ void View::draw_struct_info(std::size_t row, float value_x) {
             continue;
         }
         if (value == "??") {
-            ui::muted("не читается");
+            ui::muted(tr("unreadable", "не читается"));
             continue;
         }
         if (mono) {
@@ -617,41 +635,41 @@ void View::draw_struct_info(std::size_t row, float value_x) {
     }
 
     ImGui::Spacing();
-    if (ui::button("Изменить…", structure.editable(row))) {
+    if (ui::button(tr("Edit…", "Изменить…"), structure.editable(row))) {
         open_field_dialog(row);
     }
-    ImGui::SetItemTooltip("Тип, длина и имя поля.  F2");
+    ImGui::SetItemTooltip("%s", tr("The field's type, length and name.  F2", "Тип, длина и имя поля.  F2"));
     ImGui::SameLine();
-    if (ui::button("Сбросить", structure.editable(row) && field.defined)) {
+    if (ui::button(tr("Reset", "Сбросить"), structure.editable(row) && field.defined)) {
         structure.forget(row);
         return;
     }
-    ImGui::SetItemTooltip("Снова угадывать тип поля.  Del");
-    if (ui::button("В список адресов")) {
+    ImGui::SetItemTooltip("%s", tr("Guess the field's type again.  Del", "Снова угадывать тип поля.  Del"));
+    if (ui::button(tr("To the address list", "В список адресов"))) {
         session_.add_struct_watch(row, 0);
     }
     ImGui::SetItemTooltip("Insert");
     ImGui::SameLine();
-    if (ui::button("Разобрать отсюда", field.type == FieldType::Pointer)) {
+    if (ui::button(tr("Lay out from here", "Разобрать отсюда"), field.type == FieldType::Pointer)) {
         if (structure.dissect(row)) {
             session_.refresh_structure(now);
         }
         return;
     }
-    ImGui::SetItemTooltip("Сделать главной структуру, куда ведёт указатель");
+    ImGui::SetItemTooltip("%s", tr("Make the structure the pointer leads to the main one", "Сделать главной структуру, куда ведёт указатель"));
 
     ImGui::Spacing();
-    ui::heading(fonts_.heading, "СТРУКТУРА");
+    ui::heading(fonts_.heading, tr("STRUCTURE", "СТРУКТУРА"));
     const std::string base = format_struct_base(structure.base());
-    ui::field("База", base, value_x, fonts_.mono);
+    ui::field(tr("Base", "База"), base, value_x, fonts_.mono);
     ImGui::SetItemTooltip("%s", base.c_str());
     if (is_chain(structure.base())) {
         const std::optional<std::uint64_t> start = structure.address(0);
-        ui::field("Адрес", start ? format_address(*start) : std::string("цепочка сейчас никуда не ведёт"), value_x,
-                  start ? fonts_.mono : nullptr);
+        ui::field(tr("Address", "Адрес"), start ? format_address(*start) : std::string(tr("the chain leads nowhere now", "цепочка сейчас никуда не ведёт")),
+                  value_x, start ? fonts_.mono : nullptr);
     }
     ImGui::AlignTextToFramePadding();
-    ui::muted("Размер");
+    ui::muted(tr("Size", "Размер"));
     ImGui::SameLine(value_x);
     if (!struct_resizing_) {
         struct_resize_ = format_hex(structure.size());
@@ -668,13 +686,13 @@ void View::draw_struct_info(std::size_t row, float value_x) {
     struct_resizing_ = ImGui::IsItemActive();
     ImGui::PopFont();
     ImGui::SameLine();
-    ui::muted("байт, hex, Enter");
+    ui::muted(tr("bytes, hex, Enter", "байт, hex, Enter"));
     for (std::size_t i = 1; i < structure.instances(); ++i) {
         ImGui::PushID(static_cast<int>(i));
         ImGui::AlignTextToFramePadding();
-        ui::muted("Столбец " + std::to_string(i + 1));
+        ui::muted(tr("Column ", "Столбец ") + std::to_string(i + 1));
         ImGui::SameLine(value_x);
-        if (ui::button("Убрать")) {
+        if (ui::button(tr("Remove", "Убрать"))) {
             structure.remove_instance(i);
             ImGui::PopID();
             break;
@@ -696,12 +714,14 @@ void View::draw_struct_open() {
     bool submit = enter_pressed();
     const float value_x = std::floor(90.0f * scale_);
 
-    ui::heading(fonts_.heading, "РАЗОБРАТЬ СТРУКТУРУ");
-    ui::muted_wrapped("Поля читаются из памяти программы дважды в секунду, типы угадываются по байтам. Цепочка проходится заново "
-                      "при каждом чтении, поэтому структура находится и после того, как программа переложит её или перезапустится.");
+    ui::heading(fonts_.heading, tr("LAY OUT A STRUCTURE", "РАЗОБРАТЬ СТРУКТУРУ"));
+    ui::muted_wrapped(tr("Fields are read from the program's memory twice a second, types are guessed from the bytes. The chain is "
+                         "walked anew on each read, so the structure is found even after the program moves it or restarts.",
+                         "Поля читаются из памяти программы дважды в секунду, типы угадываются по байтам. Цепочка проходится заново "
+                         "при каждом чтении, поэтому структура находится и после того, как программа переложит её или перезапустится."));
     ImGui::Spacing();
     ImGui::AlignTextToFramePadding();
-    ui::muted("База");
+    ui::muted(tr("Base", "База"));
     ImGui::SameLine(value_x);
     ImGui::SetNextItemWidth(-FLT_MIN);
     if (struct_focus_) {
@@ -709,23 +729,23 @@ void View::draw_struct_open() {
         struct_focus_ = false;
     }
     ImGui::PushFont(fonts_.mono);
-    ImGui::InputTextWithHint("##struct_base", kBaseHint, &struct_base_);
+    ImGui::InputTextWithHint("##struct_base", base_hint(), &struct_base_);
     ImGui::PopFont();
 
     ImGui::AlignTextToFramePadding();
-    ui::muted("Размер");
+    ui::muted(tr("Size", "Размер"));
     ImGui::SameLine(value_x);
     ImGui::SetNextItemWidth(std::floor(110.0f * scale_));
     ImGui::PushFont(fonts_.mono);
     ImGui::InputText("##struct_size", &struct_size_);
     ImGui::PopFont();
     ImGui::SameLine();
-    ui::muted("байт, hex, до " + format_hex(kMaxStructSize));
+    ui::muted(tr("bytes, hex, up to ", "байт, hex, до ") + format_hex(kMaxStructSize));
 
     const bool suggested = struct_base_ == struct_suggested_base_;
     if (suggested && struct_focus_offset_ && (*struct_focus_offset_ > 0 || struct_known_)) {
         ImGui::SetCursorPosX(value_x);
-        std::string note = "Будет выделено поле " + format_hex(*struct_focus_offset_);
+        std::string note = tr("Field ", "Будет выделено поле ") + format_hex(*struct_focus_offset_) + tr(" will be selected", "");
         if (struct_known_) {
             note += " «" + struct_known_->name + "»";
         }
@@ -736,7 +756,7 @@ void View::draw_struct_open() {
         ui::inverted_block(struct_error_);
     }
     ImGui::Spacing();
-    const int pressed = dialog_buttons("Разобрать", "Отмена");
+    const int pressed = dialog_buttons(tr("Lay out", "Разобрать"), tr("Cancel", "Отмена"));
     submit |= pressed == 0;
     close |= pressed == 1;
 
@@ -744,10 +764,10 @@ void View::draw_struct_open() {
         std::optional<PointerPath> base = parse_pointer_path(trimmed(struct_base_), session_.pointer_size());
         const std::optional<std::uint64_t> size = parse_address(struct_size_);
         if (!base) {
-            struct_error_ = kBaseError;
+            struct_error_ = base_error();
             struct_focus_ = true;
         } else if (!size || *size == 0 || *size > kMaxStructSize) {
-            struct_error_ = "Размер — от 0x1 до " + format_hex(kMaxStructSize) + " байт, hex.";
+            struct_error_ = tr("The size is from 0x1 to ", "Размер — от 0x1 до ") + format_hex(kMaxStructSize) + tr(" bytes, hex.", " байт, hex.");
         } else if (session_.open_structure(std::move(*base), static_cast<std::uint32_t>(*size), suggested ? struct_focus_offset_ : std::nullopt,
                                            suggested ? struct_known_ : std::nullopt)) {
             page_ = Page::Structure;
@@ -774,53 +794,54 @@ void View::draw_struct_field() {
     const float value_x = std::floor(100.0f * scale_);
     StructTable& structure = session_.structure();
 
-    ui::heading(fonts_.heading, "ПОЛЕ СТРУКТУРЫ");
+    ui::heading(fonts_.heading, tr("STRUCTURE FIELD", "ПОЛЕ СТРУКТУРЫ"));
     ImGui::AlignTextToFramePadding();
-    ui::muted("Смещение");
+    ui::muted(tr("Offset", "Смещение"));
     ImGui::SameLine(value_x);
     ImGui::SetNextItemWidth(std::floor(110.0f * scale_));
     ImGui::PushFont(fonts_.mono);
     ImGui::InputTextWithHint("##field_offset", "0x50", &field_offset_);
     ImGui::PopFont();
     ImGui::SameLine();
-    ui::muted("от начала структуры, hex");
+    ui::muted(tr("from the start of the structure, hex", "от начала структуры, hex"));
 
     ImGui::AlignTextToFramePadding();
-    ui::muted("Тип");
+    ui::muted(tr("Type", "Тип"));
     ImGui::SameLine(value_x);
     const float x = ImGui::GetCursorPosX();
     ui::segments(field_type_, {{FieldType::Int8, "int8"}, {FieldType::Int16, "int16"}, {FieldType::Int32, "int32"}, {FieldType::Int64, "int64"}});
     ImGui::SetCursorPosX(x);
     ui::segments(field_type_, {{FieldType::Float, "float"}, {FieldType::Double, "double"}, {FieldType::Pointer, "pointer"}});
     ImGui::SetCursorPosX(x);
-    ui::segments(field_type_, {{FieldType::Ascii, "ASCII"}, {FieldType::Utf16, "UTF-16"}, {FieldType::Bytes, "Байты"}});
+    ui::segments(field_type_, {{FieldType::Ascii, "ASCII"}, {FieldType::Utf16, "UTF-16"}, {FieldType::Bytes, tr("Bytes", "Байты")}});
     if (has_length(field_type_)) {
         ImGui::AlignTextToFramePadding();
-        ui::muted("Длина");
+        ui::muted(tr("Length", "Длина"));
         ImGui::SameLine(value_x);
         ImGui::SetNextItemWidth(std::floor(70.0f * scale_));
         ImGui::InputInt("##field_length", &field_length_, 0, 0);
         ImGui::SameLine();
-        ui::muted(std::string(field_type_ == FieldType::Bytes ? "байт" : "символов") + ", до " + std::to_string(kMaxFieldLength));
+        ui::muted(std::string(field_type_ == FieldType::Bytes ? tr("bytes", "байт") : tr("characters", "символов")) + tr(", up to ", ", до ") + std::to_string(kMaxFieldLength));
     }
 
     ImGui::AlignTextToFramePadding();
-    ui::muted("Имя");
+    ui::muted(tr("Name", "Имя"));
     ImGui::SameLine(value_x);
     ImGui::SetNextItemWidth(-FLT_MIN);
     if (struct_focus_) {
         ImGui::SetKeyboardFocusHere();
         struct_focus_ = false;
     }
-    ImGui::InputTextWithHint("##field_name", "например health", &field_name_);
+    ImGui::InputTextWithHint("##field_name", tr("for example health", "например health"), &field_name_);
     ImGui::Spacing();
-    ui::muted_wrapped("Заданные поля сохраняются кнопкой «Сохранить…»; поля вокруг угадываются заново.");
+    ui::muted_wrapped(tr("Defined fields are saved with the «Save…» button; the fields around them are guessed anew.",
+                         "Заданные поля сохраняются кнопкой «Сохранить…»; поля вокруг угадываются заново."));
     if (!struct_error_.empty()) {
         ImGui::Spacing();
         ui::inverted_block(struct_error_);
     }
     ImGui::Spacing();
-    const int pressed = dialog_buttons("Задать", "Отмена");
+    const int pressed = dialog_buttons(tr("Set", "Задать"), tr("Cancel", "Отмена"));
     submit |= pressed == 0;
     close |= pressed == 1;
 
@@ -828,16 +849,16 @@ void View::draw_struct_field() {
         const std::optional<std::uint64_t> offset = parse_address(field_offset_);
         const bool length_ok = !has_length(field_type_) || (field_length_ >= 1 && field_length_ <= static_cast<int>(kMaxFieldLength));
         if (!offset || *offset >= kMaxStructSize) {
-            struct_error_ = "Смещение — от 0x0 до " + format_hex(kMaxStructSize - 1) + ", hex.";
+            struct_error_ = tr("The offset is from 0x0 to ", "Смещение — от 0x0 до ") + format_hex(kMaxStructSize - 1) + tr(", hex.", ", hex.");
         } else if (!length_ok) {
-            struct_error_ = "Длина — от 1 до " + std::to_string(kMaxFieldLength) + ".";
+            struct_error_ = tr("Length is from 1 to ", "Длина — от 1 до ") + std::to_string(kMaxFieldLength) + ".";
         } else if (structure.define(static_cast<std::uint32_t>(*offset), field_type_,
                                     has_length(field_type_) ? static_cast<std::uint32_t>(field_length_) : 0, trimmed(field_name_))) {
             structure.select_offset(static_cast<std::uint32_t>(*offset));
             scroll_to_selection_ = true;
             close = true;
         } else {
-            struct_error_ = "Поле не помещается в " + format_hex(kMaxStructSize) + " байт.";
+            struct_error_ = tr("The field does not fit in ", "Поле не помещается в ") + format_hex(kMaxStructSize) + tr(" bytes.", " байт.");
         }
     }
     if (close) {
@@ -856,12 +877,14 @@ void View::draw_struct_instance() {
     bool submit = enter_pressed();
     const float value_x = std::floor(90.0f * scale_);
 
-    ui::heading(fonts_.heading, "СРАВНИТЬ С ДРУГИМ ЭКЗЕМПЛЯРОМ");
-    ui::muted_wrapped("Та же структура по другому адресу, например другой игрок. Его значения встанут столбцом рядом, а те, что "
-                      "отличаются от первого столбца, будут выделены.");
+    ui::heading(fonts_.heading, tr("COMPARE WITH ANOTHER INSTANCE", "СРАВНИТЬ С ДРУГИМ ЭКЗЕМПЛЯРОМ"));
+    ui::muted_wrapped(tr("The same structure at another address, for example another player. Its values stand in a column beside, and "
+                         "the ones that differ from the first column are highlighted.",
+                         "Та же структура по другому адресу, например другой игрок. Его значения встанут столбцом рядом, а те, что "
+                         "отличаются от первого столбца, будут выделены."));
     ImGui::Spacing();
     ImGui::AlignTextToFramePadding();
-    ui::muted("База");
+    ui::muted(tr("Base", "База"));
     ImGui::SameLine(value_x);
     ImGui::SetNextItemWidth(-FLT_MIN);
     if (struct_focus_) {
@@ -869,14 +892,14 @@ void View::draw_struct_instance() {
         struct_focus_ = false;
     }
     ImGui::PushFont(fonts_.mono);
-    ImGui::InputTextWithHint("##instance_base", kBaseHint, &instance_base_);
+    ImGui::InputTextWithHint("##instance_base", base_hint(), &instance_base_);
     ImGui::PopFont();
     if (!struct_error_.empty()) {
         ImGui::Spacing();
         ui::inverted_block(struct_error_);
     }
     ImGui::Spacing();
-    const int pressed = dialog_buttons("Добавить", "Отмена");
+    const int pressed = dialog_buttons(tr("Add", "Добавить"), tr("Cancel", "Отмена"));
     submit |= pressed == 0;
     close |= pressed == 1;
 
@@ -884,10 +907,10 @@ void View::draw_struct_instance() {
         StructTable& structure = session_.structure();
         std::optional<PointerPath> base = parse_pointer_path(trimmed(instance_base_), session_.pointer_size());
         if (!base) {
-            struct_error_ = kBaseError;
+            struct_error_ = base_error();
             struct_focus_ = true;
         } else if (!structure.add_instance(std::move(*base))) {
-            struct_error_ = "Такой столбец уже есть, или их уже " + std::to_string(kMaxInstances) + ".";
+            struct_error_ = tr("That column already exists, or there are already ", "Такой столбец уже есть, или их уже ") + std::to_string(kMaxInstances) + ".";
             struct_focus_ = true;
         } else {
             session_.refresh_structure(StructTable::Clock::now());

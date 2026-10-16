@@ -186,6 +186,7 @@ public:
 
     const Notice& notice() const noexcept { return notice_; }
     void set_notice(std::string text, bool error);
+    void clear_notice() noexcept { notice_ = {}; }
 
 private:
     void stop_job();

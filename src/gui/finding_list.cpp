@@ -2,15 +2,13 @@
 
 #include <algorithm>
 
+#include "gui/lang.hpp"
 #include "gui/results_table.hpp"
 
 namespace mh::gui {
 
 std::string count_findings(std::uint64_t count) {
-    const std::uint64_t tens = count % 100;
-    const std::uint64_t ones = count % 10;
-    const char* word = (tens >= 11 && tens <= 14) ? "находок" : ones == 1 ? "находка" : (ones >= 2 && ones <= 4) ? "находки" : "находок";
-    return group_digits(count) + " " + word;
+    return plural(count, true, "finding", "findings", "находка", "находки", "находок");
 }
 
 void FindingList::assign(InspectReport report) {

@@ -15,6 +15,7 @@
 
 #include "common/error.hpp"
 #include "common/text.hpp"
+#include "gui/lang.hpp"
 #include "gui/process_picker.hpp"
 #include "gui/view_internal.hpp"
 #include "gui/widgets.hpp"
@@ -58,18 +59,19 @@ bool contains_lower(std::string_view haystack, std::string_view lower_needle) {
 
 const char* job_label(const Job& job) {
     if (job.cancel_requested()) {
-        return "Остановка…";
+        return tr("Stopping…", "Остановка…");
     }
     switch (job.kind()) {
-        case JobKind::Remember: return "Запоминание памяти";
+        case JobKind::Remember: return tr("Remembering memory", "Запоминание памяти");
         case JobKind::ChangedScan:
-            return job.progress().stage.load(std::memory_order_relaxed) == JobStage::Hashing ? "Сравнение с запомненной памятью"
-                                                                                             : "Поиск в изменившейся памяти";
-        case JobKind::Scan: return "Поиск";
-        case JobKind::ValueScan: return "Поиск значений";
-        case JobKind::PointerScan: return "Поиск указателей";
-        case JobKind::PointerCheck: return "Проверка цепочек";
-        case JobKind::Inspect: return "Проверка памяти";
+            return job.progress().stage.load(std::memory_order_relaxed) == JobStage::Hashing
+                       ? tr("Comparing with the remembered memory", "Сравнение с запомненной памятью")
+                       : tr("Searching the changed memory", "Поиск в изменившейся памяти");
+        case JobKind::Scan: return tr("Searching", "Поиск");
+        case JobKind::ValueScan: return tr("Searching for values", "Поиск значений");
+        case JobKind::PointerScan: return tr("Searching for pointers", "Поиск указателей");
+        case JobKind::PointerCheck: return tr("Checking the chains", "Проверка цепочек");
+        case JobKind::Inspect: return tr("Checking memory", "Проверка памяти");
     }
     return "";
 }
@@ -91,11 +93,12 @@ void progress_line(std::initializer_list<std::pair<const char*, std::string>> pa
 const char* compare_hint(Compare compare) {
     switch (compare) {
         case Compare::Unknown:
-            return "Запомнит все значения выбранного типа. Потом измените значение в программе и выберите, как оно изменилось.";
-        case Compare::Increased: return "Останутся адреса, где значение стало больше, чем при прошлом поиске.";
-        case Compare::Decreased: return "Останутся адреса, где значение стало меньше, чем при прошлом поиске.";
-        case Compare::Changed: return "Останутся адреса, где значение изменилось с прошлого поиска.";
-        case Compare::Unchanged: return "Останутся адреса, где значение не менялось с прошлого поиска.";
+            return tr("Remembers every value of the chosen type. Then change the value in the program and pick how it changed.",
+                      "Запомнит все значения выбранного типа. Потом измените значение в программе и выберите, как оно изменилось.");
+        case Compare::Increased: return tr("Keeps the addresses where the value grew since the last search.", "Останутся адреса, где значение стало больше, чем при прошлом поиске.");
+        case Compare::Decreased: return tr("Keeps the addresses where the value shrank since the last search.", "Останутся адреса, где значение стало меньше, чем при прошлом поиске.");
+        case Compare::Changed: return tr("Keeps the addresses where the value changed since the last search.", "Останутся адреса, где значение изменилось с прошлого поиска.");
+        case Compare::Unchanged: return tr("Keeps the addresses where the value did not change since the last search.", "Останутся адреса, где значение не менялось с прошлого поиска.");
         default: return "";
     }
 }
@@ -169,11 +172,11 @@ void View::open_from_command_line(const std::string& pid_or_name) {
     } catch (const Error& error) {
         show_picker();
         if (error.code() == ErrorCode::ProcessNotFound) {
-            picker_error_ = "Процесс «" + pid_or_name + "» не найден. Выберите его в списке.";
+            picker_error_ = tr("The process «", "Процесс «") + pid_or_name + tr("» was not found. Pick it from the list.", "» не найден. Выберите его в списке.");
         } else if (pid_or_name.find_first_not_of("0123456789") == std::string::npos) {
-            picker_error_ = "«" + pid_or_name + "» — неверный PID. Выберите процесс в списке.";
+            picker_error_ = "«" + pid_or_name + tr("» is not a valid PID. Pick a process from the list.", "» — неверный PID. Выберите процесс в списке.");
         } else {
-            picker_error_ = "Процессов с именем «" + pid_or_name + "» несколько. Выберите нужный в списке.";
+            picker_error_ = tr("There is more than one process named «", "Процессов с именем «") + pid_or_name + tr("». Pick the right one from the list.", "» несколько. Выберите нужный в списке.");
             process_filter_ = pid_or_name;
         }
         return;
@@ -304,7 +307,7 @@ void View::export_results() {
             export_rows(*path, table.results(), table.rows());
             saved = count_matches(table.rows().size());
         }
-        session_.set_notice("Сохранено " + saved + " в " + wide_to_utf8(path->wstring()), false);
+        session_.set_notice(tr("Saved ", "Сохранено ") + saved + tr(" to ", " в ") + wide_to_utf8(path->wstring()), false);
     } catch (const Error& error) {
         session_.set_notice(describe_error(error), true);
     }
@@ -313,7 +316,7 @@ void View::export_results() {
 void View::copy_address(std::uint64_t address) {
     const std::string text = format_address(address);
     ImGui::SetClipboardText(text.c_str());
-    session_.set_notice("Адрес скопирован: " + text, false);
+    session_.set_notice(tr("Address copied: ", "Адрес скопирован: ") + text, false);
 }
 
 void View::update_title() {
@@ -527,26 +530,38 @@ void View::draw_top_bar() {
             ImGui::SetItemTooltip("%s", process.path.c_str());
         }
         ImGui::SameLine();
-        ui::muted("PID " + std::to_string(process.pid) + (process.wow64 ? "   32-бит" : "   64-бит"));
+        ui::muted("PID " + std::to_string(process.pid) + (process.wow64 ? tr("   32-bit", "   32-бит") : tr("   64-bit", "   64-бит")));
         ImGui::SameLine(0.0f, 28.0f * scale_);
-        ui::muted("Состояние");
+        ui::muted(tr("State", "Состояние"));
         ImGui::SameLine();
         if (const Job* job = session_.job()) {
             ui::text(job_label(*job));
         } else if (!alive_) {
-            inverted_text("Процесс завершён");
+            inverted_text(tr("Process ended", "Процесс завершён"));
         } else {
-            ui::text("Готово");
+            ui::text(tr("Ready", "Готово"));
         }
     } else {
         ImGui::AlignTextToFramePadding();
-        ui::muted("Процесс не выбран");
+        ui::muted(tr("No process selected", "Процесс не выбран"));
     }
 
-    const char* open_label = "Выбрать процесс";
-    const char* export_label = "Экспорт";
-    const float buttons = button_width(open_label) + style.ItemSpacing.x + button_width(export_label);
+    const char* open_label = tr("Select process", "Выбрать процесс");
+    const char* export_label = tr("Export", "Экспорт");
+    const float lang_segment = std::floor(34.0f * scale_);
+    const float buttons = lang_segment * 2.0f + style.ItemSpacing.x + button_width(open_label) + style.ItemSpacing.x + button_width(export_label);
     ImGui::SameLine(std::max(right_edge - buttons, ImGui::GetCursorPosX()));
+    if (ui::segment("EN", current_language() == Lang::English, true, ImVec2(lang_segment, 0.0f)) && current_language() != Lang::English) {
+        set_language(Lang::English);
+        session_.clear_notice();  // the shown notice was built in the other language
+    }
+    ImGui::SameLine(0.0f, 0.0f);
+    if (ui::segment("RU", current_language() == Lang::Russian, true, ImVec2(lang_segment, 0.0f)) && current_language() != Lang::Russian) {
+        set_language(Lang::Russian);
+        session_.clear_notice();  // the shown notice was built in the other language
+    }
+    ImGui::SetItemTooltip("%s", tr("Interface language", "Язык интерфейса"));
+    ImGui::SameLine();
     if (ui::button(open_label)) {
         show_picker();
     }
@@ -555,16 +570,16 @@ void View::draw_top_bar() {
     if (ui::button(export_label, can_export())) {
         export_results();
     }
-    ImGui::SetItemTooltip("Сохранить показанные строки в JSON, CSV или текст.  Ctrl+S");
+    ImGui::SetItemTooltip("%s", tr("Save the shown rows as JSON, CSV or text.  Ctrl+S", "Сохранить показанные строки в JSON, CSV или текст.  Ctrl+S"));
     ImGui::Separator();
 }
 
 void View::draw_search_panel(float width, float height) {
     ImGui::BeginChild("##search", ImVec2(width, height), ImGuiChildFlags_Borders, kPanel);
-    ui::heading(fonts_.heading, "ПОИСК");
+    ui::heading(fonts_.heading, tr("SEARCH", "ПОИСК"));
     const bool enabled = !session_.busy();
-    ui::segments(form_.mode, {{SearchMode::Text, "Текст"}, {SearchMode::Bytes, "Байты"}, {SearchMode::Number, "Число"},
-                              {SearchMode::Strings, "Строки"}},
+    ui::segments(form_.mode, {{SearchMode::Text, tr("Text", "Текст")}, {SearchMode::Bytes, tr("Bytes", "Байты")}, {SearchMode::Number, tr("Number", "Число")},
+                              {SearchMode::Strings, tr("Strings", "Строки")}},
                  enabled);
     ImGui::Spacing();
     if (!enabled) {
@@ -626,29 +641,32 @@ void View::draw_search_inputs() {
     switch (form_.mode) {
         case SearchMode::Text:
             focus_here();
-            if (ImGui::InputTextWithHint("##text", "Текст, например Stalker", &form_.text, enter)) {
+            if (ImGui::InputTextWithHint("##text", tr("Text, for example Stalker", "Текст, например Stalker"), &form_.text, enter)) {
                 start_scan();
             }
             ui::segments(form_.text_encoding,
-                         {{TextEncoding::Both, "ASCII и UTF-16"}, {TextEncoding::Ascii, "ASCII"}, {TextEncoding::Utf16, "UTF-16"}});
-            ImGui::Checkbox("Без учёта регистра", &form_.ignore_case);
-            ui::muted_wrapped("Программы Windows обычно хранят текст в UTF-16, а старые и кроссплатформенные — в ASCII.");
+                         {{TextEncoding::Both, tr("ASCII and UTF-16", "ASCII и UTF-16")}, {TextEncoding::Ascii, "ASCII"}, {TextEncoding::Utf16, "UTF-16"}});
+            ImGui::Checkbox(tr("Case-insensitive", "Без учёта регистра"), &form_.ignore_case);
+            ui::muted_wrapped(tr("Windows programs usually store text in UTF-16, while older and cross-platform ones use ASCII.",
+                                 "Программы Windows обычно хранят текст в UTF-16, а старые и кроссплатформенные — в ASCII."));
             break;
         case SearchMode::Bytes:
             focus_here();
             ImGui::InputTextMultiline("##signatures", &form_.signatures, ImVec2(-1.0f, ImGui::GetTextLineHeight() * 5.0f));
-            ui::muted_wrapped("По одной сигнатуре в строке: 48 8B ?? 89, где ?? — любой байт. Имя задаётся так: деньги=98 3A 00 00");
+            ui::muted_wrapped(tr("One signature per line: 48 8B ?? 89, where ?? is any byte. A name is given like this: money=98 3A 00 00",
+                                 "По одной сигнатуре в строке: 48 8B ?? 89, где ?? — любой байт. Имя задаётся так: деньги=98 3A 00 00"));
             break;
         case SearchMode::Number: draw_value_inputs(); break;
         case SearchMode::Strings: {
             ImGui::AlignTextToFramePadding();
-            ui::muted("Мин. длина");
+            ui::muted(tr("Min. length", "Мин. длина"));
             ImGui::SameLine();
             focus_here();
             ImGui::InputScalar("##min_length", ImGuiDataType_U32, &form_.min_length);
             ui::segments(form_.strings_encoding,
-                         {{TextEncoding::Both, "ASCII и UTF-16"}, {TextEncoding::Ascii, "ASCII"}, {TextEncoding::Utf16, "UTF-16"}});
-            ui::muted_wrapped("Находит все читаемые строки в памяти. Удобно, когда не знаете точно, что искать.");
+                         {{TextEncoding::Both, tr("ASCII and UTF-16", "ASCII и UTF-16")}, {TextEncoding::Ascii, "ASCII"}, {TextEncoding::Utf16, "UTF-16"}});
+            ui::muted_wrapped(tr("Finds every readable string in memory. Handy when you are not sure what to search for.",
+                                 "Находит все читаемые строки в памяти. Удобно, когда не знаете точно, что искать."));
             break;
         }
     }
@@ -664,12 +682,12 @@ void View::draw_value_inputs() {
         form_.compare = Compare::Exact;
     }
     ui::segments(form_.compare,
-                 {{Compare::Exact, "Равно"}, {Compare::Greater, "Больше"}, {Compare::Less, "Меньше"}, {Compare::Between, "Между"}});
+                 {{Compare::Exact, tr("Equal", "Равно")}, {Compare::Greater, tr("Greater", "Больше")}, {Compare::Less, tr("Less", "Меньше")}, {Compare::Between, tr("Between", "Между")}});
     if (next) {
-        ui::segments(form_.compare, {{Compare::Increased, "Увеличилось"}, {Compare::Decreased, "Уменьшилось"}});
-        ui::segments(form_.compare, {{Compare::Changed, "Изменилось"}, {Compare::Unchanged, "Не изменилось"}});
+        ui::segments(form_.compare, {{Compare::Increased, tr("Increased", "Увеличилось")}, {Compare::Decreased, tr("Decreased", "Уменьшилось")}});
+        ui::segments(form_.compare, {{Compare::Changed, tr("Changed", "Изменилось")}, {Compare::Unchanged, tr("Unchanged", "Не изменилось")}});
     } else {
-        ui::segments(form_.compare, {{Compare::Unknown, "Неизвестное начальное значение"}});
+        ui::segments(form_.compare, {{Compare::Unknown, tr("Unknown initial value", "Неизвестное начальное значение")}});
     }
 
     constexpr ImGuiInputTextFlags enter = ImGuiInputTextFlags_EnterReturnsTrue;
@@ -683,16 +701,16 @@ void View::draw_value_inputs() {
         const float spacing = ImGui::GetStyle().ItemSpacing.x;
         ImGui::SetNextItemWidth(std::floor((ImGui::GetContentRegionAvail().x - spacing) * 0.5f));
         focus_here();
-        bool submit = ImGui::InputTextWithHint("##number", "от", &form_.number, enter);
+        bool submit = ImGui::InputTextWithHint("##number", tr("from", "от"), &form_.number, enter);
         ImGui::SameLine(0.0f, spacing);
         ImGui::SetNextItemWidth(-1.0f);
-        submit |= ImGui::InputTextWithHint("##number_high", "до", &form_.number_high, enter);
+        submit |= ImGui::InputTextWithHint("##number_high", tr("to", "до"), &form_.number_high, enter);
         if (submit) {
             start_scan();
         }
     } else if (takes_number(form_.compare)) {
         focus_here();
-        const char* hint = next && form_.compare == Compare::Exact ? "Значение сейчас" : "Число, например 15000 или 0x3A98";
+        const char* hint = next && form_.compare == Compare::Exact ? tr("The value now", "Значение сейчас") : tr("A number, for example 15000 or 0x3A98", "Число, например 15000 или 0x3A98");
         if (ImGui::InputTextWithHint("##number", hint, &form_.number, enter)) {
             start_scan();
         }
@@ -709,7 +727,7 @@ void View::draw_value_inputs() {
     ui::segments(shown, {{NumberType::Int8, "int8"}, {NumberType::Int16, "int16"}, {NumberType::Int32, "int32"}, {NumberType::Int64, "int64"}});
     ui::segments(shown, {{NumberType::Float, "float"}, {NumberType::Double, "double"}});
     bool aligned = next ? values.candidates()->aligned : form_.aligned;
-    ImGui::Checkbox("Только выровненные адреса", &aligned);
+    ImGui::Checkbox(tr("Aligned addresses only", "Только выровненные адреса"), &aligned);
     if (next) {
         ImGui::EndDisabled();
     } else {
@@ -717,10 +735,11 @@ void View::draw_value_inputs() {
         form_.aligned = aligned;
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("Адрес кратен размеру значения: так числа хранят почти все программы. Поиск быстрее, лишних адресов меньше.");
+        ImGui::SetTooltip("%s", tr("The address is a multiple of the value's size: that is how almost all programs store numbers. The search is faster, with fewer stray addresses.",
+                                   "Адрес кратен размеру значения: так числа хранят почти все программы. Поиск быстрее, лишних адресов меньше."));
     }
     if (next) {
-        ui::muted_wrapped("Тип, выравнивание и виды памяти заданы первым поиском.");
+        ui::muted_wrapped(tr("Type, alignment and memory kinds are set by the first search.", "Тип, выравнивание и виды памяти заданы первым поиском."));
     }
 
     const bool typed = !form_.number.empty() || (form_.compare == Compare::Between && !form_.number_high.empty());
@@ -733,16 +752,16 @@ void View::draw_value_inputs() {
             return;
         }
         if (!is_float(type)) {
-            ui::muted("В памяти:");
+            ui::muted(tr("In memory:", "В памяти:"));
             ImGui::SameLine();
             ImGui::PushFont(fonts_.mono);
             ui::text(number_signature(form_.number, type));
             ImGui::PopFont();
         } else if (condition.tolerance > 0) {
-            ui::muted_wrapped("Подойдёт от " + float_bound(condition.number - condition.tolerance, condition.tolerance) + " до " +
+            ui::muted_wrapped(tr("Matches from ", "Подойдёт от ") + float_bound(condition.number - condition.tolerance, condition.tolerance) + tr(" to ", " до ") +
                               float_bound(condition.number + condition.tolerance, condition.tolerance));
         } else {
-            ui::muted("Подойдёт только точно это значение");
+            ui::muted(tr("Only exactly this value matches", "Подойдёт только точно это значение"));
         }
     } catch (const Error& error) {
         ui::muted_wrapped(error.what());
@@ -752,7 +771,7 @@ void View::draw_value_inputs() {
 void View::draw_scan_button() {
     const ImVec2 size(-1.0f, std::floor(ImGui::GetFrameHeight() * 1.3f));
     if (const Job* job = session_.job()) {
-        if (ui::button(job->cancel_requested() ? "Останавливается…" : "Остановить   Esc", !job->cancel_requested(), size)) {
+        if (ui::button(job->cancel_requested() ? tr("Stopping…", "Останавливается…") : tr("Stop   Esc", "Остановить   Esc"), !job->cancel_requested(), size)) {
             session_.cancel();
         }
         return;
@@ -760,7 +779,7 @@ void View::draw_scan_button() {
     const bool can_scan = session_.target() != nullptr && alive_;
     if (value_mode()) {
         if (!session_.values().has_values()) {
-            if (ui::button("Первый поиск   F5", can_scan, size)) {
+            if (ui::button(tr("First search   F5", "Первый поиск   F5"), can_scan, size)) {
                 start_scan();
             }
             return;
@@ -768,18 +787,18 @@ void View::draw_scan_button() {
         const float spacing = ImGui::GetStyle().ItemSpacing.x;
         const float width = ImGui::GetContentRegionAvail().x;
         const float reset_width = std::floor(width * 0.36f);
-        if (ui::button("Следующий поиск   F5", can_scan, ImVec2(width - reset_width - spacing, size.y))) {
+        if (ui::button(tr("Next search   F5", "Следующий поиск   F5"), can_scan, ImVec2(width - reset_width - spacing, size.y))) {
             start_scan();
         }
         ImGui::SameLine(0.0f, spacing);
-        if (ui::button("Новый поиск", true, ImVec2(reset_width, size.y))) {
+        if (ui::button(tr("New search", "Новый поиск"), true, ImVec2(reset_width, size.y))) {
             session_.reset_values();
             focus_search_ = true;
         }
-        ImGui::SetItemTooltip("Забыть найденные адреса и начать с первого поиска");
+        ImGui::SetItemTooltip("%s", tr("Forget the found addresses and start from the first search", "Забыть найденные адреса и начать с первого поиска"));
         return;
     }
-    const char* label = only_changed_ && session_.baseline() ? "Найти в изменившемся   F5" : "Найти   F5";
+    const char* label = only_changed_ && session_.baseline() ? tr("Find in the changed   F5", "Найти в изменившемся   F5") : tr("Find   F5", "Найти   F5");
     if (ui::button(label, can_scan, size)) {
         start_scan();
     }
@@ -790,7 +809,7 @@ void View::draw_value_history() {
     if (history.empty()) {
         return;
     }
-    ui::heading(fonts_.heading, "ИСТОРИЯ");
+    ui::heading(fonts_.heading, tr("HISTORY", "ИСТОРИЯ"));
     std::optional<std::size_t> picked;
     float count_width = 0.0f;
     for (const HistoryStep& entry : history.steps()) {
@@ -829,10 +848,10 @@ void View::draw_value_history() {
         ImGui::EndTable();
     }
     if (history.trimmed()) {
-        ui::muted_wrapped("Ранние шаги удалены — не хватило памяти.");
+        ui::muted_wrapped(tr("Early steps removed — not enough memory.", "Ранние шаги удалены — не хватило памяти."));
     }
     if (history.steps().size() > 1) {
-        ui::muted("Ctrl+Z — назад, Ctrl+Y — вперёд");
+        ui::muted(tr("Ctrl+Z — back, Ctrl+Y — forward", "Ctrl+Z — назад, Ctrl+Y — вперёд"));
     }
     if (picked) {
         scroll_to_selection_ |= session_.go_to_scan(*picked);
@@ -840,55 +859,57 @@ void View::draw_value_history() {
 }
 
 void View::draw_memory_options() {
-    ui::heading(fonts_.heading, "ПАМЯТЬ");
+    ui::heading(fonts_.heading, tr("MEMORY", "ПАМЯТЬ"));
     const auto option = [](const char* label, bool* value, const char* hint) {
         ImGui::Checkbox(label, value);
         ImGui::SameLine();
         ui::muted(hint);
     };
-    option("private", &form_.private_memory, "куча, стеки, VirtualAlloc");
-    option("image", &form_.image_memory, "exe и dll");
-    option("mapped", &form_.mapped_memory, "файлы и общая память");
-    ImGui::Checkbox("Только с правом записи", &form_.writable_only);
+    option("private", &form_.private_memory, tr("heap, stacks, VirtualAlloc", "куча, стеки, VirtualAlloc"));
+    option("image", &form_.image_memory, tr("exe and dll", "exe и dll"));
+    option("mapped", &form_.mapped_memory, tr("files and shared memory", "файлы и общая память"));
+    ImGui::Checkbox(tr("Writable only", "Только с правом записи"), &form_.writable_only);
 }
 
 void View::draw_compare_options() {
-    ui::heading(fonts_.heading, "СРАВНЕНИЕ");
+    ui::heading(fonts_.heading, tr("COMPARE", "СРАВНЕНИЕ"));
     const bool has_target = session_.target() != nullptr && alive_;
     const auto& baseline = session_.baseline();
     const float spacing = ImGui::GetStyle().ItemSpacing.x;
     const float width = ImGui::GetContentRegionAvail().x;
     const float forget_width = std::floor(width * 0.34f);
-    if (ui::button("Запомнить память", has_target, ImVec2(width - forget_width - spacing, 0.0f))) {
+    if (ui::button(tr("Remember memory", "Запомнить память"), has_target, ImVec2(width - forget_width - spacing, 0.0f))) {
         session_.start_remember(form_);
     }
-    ImGui::SetItemTooltip("Сохраняет отпечаток памяти (хеши страниц), а не саму память.");
+    ImGui::SetItemTooltip("%s", tr("Saves a fingerprint of memory (page hashes), not the memory itself.",
+                                   "Сохраняет отпечаток памяти (хеши страниц), а не саму память."));
     ImGui::SameLine();
-    if (ui::button("Сбросить", baseline.has_value(), ImVec2(forget_width, 0.0f))) {
+    if (ui::button(tr("Reset", "Сбросить"), baseline.has_value(), ImVec2(forget_width, 0.0f))) {
         session_.forget();
         only_changed_ = false;
     }
     if (baseline) {
-        ui::text("Запомнено " + format_size(baseline->bytes));
+        ui::text(tr("Remembered ", "Запомнено ") + format_size(baseline->bytes));
     } else {
         only_changed_ = false;
-        ui::muted("Ничего не запомнено");
+        ui::muted(tr("Nothing remembered", "Ничего не запомнено"));
     }
     if (!baseline) {
         ImGui::BeginDisabled();
     }
-    ImGui::Checkbox("Только изменившаяся память", &only_changed_);
+    ImGui::Checkbox(tr("Changed memory only", "Только изменившаяся память"), &only_changed_);
     if (!baseline) {
         ImGui::EndDisabled();
     }
-    ui::muted_wrapped("Запомните, измените значение в программе и ищите снова — только в изменившейся памяти.");
+    ui::muted_wrapped(tr("Remember it, change the value in the program, and search again — only in the changed memory.",
+                         "Запомните, измените значение в программе и ищите снова — только в изменившейся памяти."));
 }
 
 void View::draw_parameters() {
-    ui::heading(fonts_.heading, "ПАРАМЕТРЫ");
+    ui::heading(fonts_.heading, tr("PARAMETERS", "ПАРАМЕТРЫ"));
     const float value_x = std::floor(170.0f * scale_);
     ImGui::AlignTextToFramePadding();
-    ui::muted("Потоков (0 — авто)");
+    ui::muted(tr("Threads (0 — auto)", "Потоков (0 — авто)"));
     ImGui::SameLine(value_x);
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::InputScalar("##threads", ImGuiDataType_U32, &form_.threads);
@@ -896,7 +917,7 @@ void View::draw_parameters() {
         return;
     }
     ImGui::AlignTextToFramePadding();
-    ui::muted("Лимит совпадений");
+    ui::muted(tr("Match limit", "Лимит совпадений"));
     ImGui::SameLine(value_x);
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::InputScalar("##max_matches", ImGuiDataType_U64, &form_.max_matches);
@@ -922,44 +943,45 @@ void View::draw_progress_panel() {
         const std::uint64_t bytes_total = progress.bytes_total.load(std::memory_order_relaxed);
         const std::uint64_t bytes_done = progress.bytes_done.load(std::memory_order_relaxed);
         const double fraction = ratio(bytes_done, bytes_total);
-        const std::string overlay = std::string(job_label(*job)) + "   " + (bytes_total == 0 ? std::string("подготовка") : percent(fraction));
+        const std::string overlay = std::string(job_label(*job)) + "   " + (bytes_total == 0 ? std::string(tr("preparing", "подготовка")) : percent(fraction));
         ui::progress_bar(static_cast<float>(fraction), overlay);
-        const std::string regions = group_digits(progress.regions_done.load(std::memory_order_relaxed)) + " из " +
+        const std::string regions = group_digits(progress.regions_done.load(std::memory_order_relaxed)) + tr(" of ", " из ") +
                                     group_digits(progress.regions_total.load(std::memory_order_relaxed));
         if (job->kind() == JobKind::ValueScan) {
-            line({{"Прочитано", format_size(bytes_done) + " из " + format_size(bytes_total)},
-                  {"Адресов", group_digits(progress.matches.load(std::memory_order_relaxed))}});
+            line({{tr("Read", "Прочитано"), format_size(bytes_done) + tr(" of ", " из ") + format_size(bytes_total)},
+                  {tr("Addresses", "Адресов"), group_digits(progress.matches.load(std::memory_order_relaxed))}});
         } else if (job->kind() == JobKind::Remember || job->progress().stage.load(std::memory_order_relaxed) == JobStage::Hashing) {
-            line({{"Прочитано", format_size(bytes_done) + " из " + format_size(bytes_total)}, {"Регионы", regions}});
+            line({{tr("Read", "Прочитано"), format_size(bytes_done) + tr(" of ", " из ") + format_size(bytes_total)}, {tr("Regions", "Регионы"), regions}});
         } else {
-            line({{"Прочитано", format_size(bytes_done) + " из " + format_size(bytes_total)},
-                  {"Регионы", regions},
-                  {"Совпадений", group_digits(progress.matches.load(std::memory_order_relaxed))}});
+            line({{tr("Read", "Прочитано"), format_size(bytes_done) + tr(" of ", " из ") + format_size(bytes_total)},
+                  {tr("Regions", "Регионы"), regions},
+                  {tr("Matches", "Совпадений"), group_digits(progress.matches.load(std::memory_order_relaxed))}});
         }
     } else if (value_mode()) {
         const ValueTable& values = session_.values();
         if (values.has_values()) {
             const ValueCandidates& candidates = *values.candidates();
-            ui::progress_bar(1.0f, "Готово");
-            line({{"Поиск", std::to_string(candidates.scans)},
-                  {"Адресов", group_digits(values.total())},
-                  {"Тип", std::string(to_string(candidates.type))},
-                  {"Список занимает", format_size(candidates.stored_bytes())}});
+            ui::progress_bar(1.0f, tr("Done", "Готово"));
+            line({{tr("Search", "Поиск"), std::to_string(candidates.scans)},
+                  {tr("Addresses", "Адресов"), group_digits(values.total())},
+                  {tr("Type", "Тип"), std::string(to_string(candidates.type))},
+                  {tr("List takes", "Список занимает"), format_size(candidates.stored_bytes())}});
         } else {
-            ui::progress_bar(0.0f, "Ожидание");
-            ui::muted("Введите значение или выберите «Неизвестное начальное значение» и нажмите «Первый поиск» или F5.");
+            ui::progress_bar(0.0f, tr("Waiting", "Ожидание"));
+            ui::muted(tr("Enter a value or pick \"Unknown initial value\" and press \"First search\" or F5.",
+                         "Введите значение или выберите «Неизвестное начальное значение» и нажмите «Первый поиск» или F5."));
         }
     } else if (table.has_results()) {
         const ScanStats& stats = table.results().stats;
         const bool complete = stats.status == ScanStatus::Completed;
         ui::progress_bar(complete ? 1.0f : static_cast<float>(ratio(stats.bytes_read + stats.bytes_unreadable, stats.bytes_planned)),
-                         complete ? "Готово" : stats.status == ScanStatus::Cancelled ? "Остановлено" : "Процесс завершился");
-        line({{"Прочитано", format_size(stats.bytes_read) + " из " + format_size(stats.bytes_planned)},
-              {"Регионы", group_digits(stats.regions_selected)},
-              {"Совпадений", group_digits(table.results().matches.size())}});
+                         complete ? tr("Done", "Готово") : stats.status == ScanStatus::Cancelled ? tr("Stopped", "Остановлено") : tr("Process ended", "Процесс завершился"));
+        line({{tr("Read", "Прочитано"), format_size(stats.bytes_read) + tr(" of ", " из ") + format_size(stats.bytes_planned)},
+              {tr("Regions", "Регионы"), group_digits(stats.regions_selected)},
+              {tr("Matches", "Совпадений"), group_digits(table.results().matches.size())}});
     } else {
-        ui::progress_bar(0.0f, "Ожидание");
-        ui::muted("Введите, что искать, и нажмите «Найти» или F5.");
+        ui::progress_bar(0.0f, tr("Waiting", "Ожидание"));
+        ui::muted(tr("Enter what to look for and press \"Find\" or F5.", "Введите, что искать, и нажмите «Найти» или F5."));
     }
     ImGui::EndChild();
 }
@@ -971,8 +993,8 @@ void View::draw_pointer_progress(const Job& job) {
         const std::uint64_t done = check.chunks_done.load(std::memory_order_relaxed);
         const double fraction = ratio(done, total);
         ui::progress_bar(static_cast<float>(fraction), std::string(job_label(job)) + "   " + percent(fraction));
-        progress_line({{"Проверено", group_digits(done) + " из " + group_digits(total)},
-                       {"Подходят", group_digits(check.matches.load(std::memory_order_relaxed))}},
+        progress_line({{tr("Checked", "Проверено"), group_digits(done) + tr(" of ", " из ") + group_digits(total)},
+                       {tr("Match", "Подходят"), group_digits(check.matches.load(std::memory_order_relaxed))}},
                       scale_);
         return;
     }
@@ -986,51 +1008,52 @@ void View::draw_pointer_progress(const Job& job) {
     switch (progress.stage.load(std::memory_order_relaxed)) {
         case PointerStage::Reading:
             fraction = ratio(bytes_done, bytes_total);
-            stage = bytes_total == 0 ? std::string("подготовка") : "чтение памяти " + percent(fraction);
+            stage = bytes_total == 0 ? std::string(tr("preparing", "подготовка")) : tr("reading memory ", "чтение памяти ") + percent(fraction);
             break;
         case PointerStage::Sorting:
             fraction = 1.0;
-            stage = "сортировка указателей";
+            stage = tr("sorting pointers", "сортировка указателей");
             break;
         case PointerStage::Searching:
             fraction = ratio(level, depth);
-            stage = "уровень " + std::to_string(level) + " из " + std::to_string(depth);
+            stage = tr("level ", "уровень ") + std::to_string(level) + tr(" of ", " из ") + std::to_string(depth);
             break;
         case PointerStage::Listing:
             fraction = 1.0;
-            stage = "составление списка";
+            stage = tr("building the list", "составление списка");
             break;
     }
     ui::progress_bar(static_cast<float>(fraction), std::string(job_label(job)) + "   " + stage);
-    progress_line({{"Прочитано", format_size(bytes_done) + " из " + format_size(bytes_total)},
-                   {"Указателей", group_digits(progress.pointers.load(std::memory_order_relaxed))},
-                   {"Адресов в цепочках", group_digits(progress.nodes.load(std::memory_order_relaxed))}},
+    progress_line({{tr("Read", "Прочитано"), format_size(bytes_done) + tr(" of ", " из ") + format_size(bytes_total)},
+                   {tr("Pointers", "Указателей"), group_digits(progress.pointers.load(std::memory_order_relaxed))},
+                   {tr("Addresses in chains", "Адресов в цепочках"), group_digits(progress.nodes.load(std::memory_order_relaxed))}},
                   scale_);
 }
 
 void View::draw_pointer_summary() {
     const PointerList& pointers = session_.pointers();
     if (!pointers.has_chains()) {
-        ui::progress_bar(0.0f, "Ожидание");
-        ui::muted("Выберите адрес в списке адресов и нажмите «Найти указатели…».");
+        ui::progress_bar(0.0f, tr("Waiting", "Ожидание"));
+        ui::muted(tr("Pick an address in the address list and press \"Find pointers…\".",
+                     "Выберите адрес в списке адресов и нажмите «Найти указатели…»."));
         return;
     }
     const PointerSearch& search = pointers.search();
-    ui::progress_bar(1.0f, "Готово");
-    progress_line({{"Цепочек", group_digits(pointers.rows().size())},
-                   {"Найдено", group_digits(search.found)},
-                   {"Проверок", std::to_string(search.checks)},
-                   {"Цель", format_address(search.target.address) + "  " + type_label(search.target)}},
+    ui::progress_bar(1.0f, tr("Done", "Готово"));
+    progress_line({{tr("Chains", "Цепочек"), group_digits(pointers.rows().size())},
+                   {tr("Found", "Найдено"), group_digits(search.found)},
+                   {tr("Checks", "Проверок"), std::to_string(search.checks)},
+                   {tr("Target", "Цель"), format_address(search.target.address) + "  " + type_label(search.target)}},
                   scale_);
 }
 
 void View::draw_page_switch() {
     const ImGuiStyle& style = ImGui::GetStyle();
     const std::size_t watched = session_.watch().rows().size();
-    const std::string watch_label = (watched == 0 ? std::string("Адреса") : "Адреса (" + std::to_string(watched) + ")") + "###watch_page";
+    const std::string watch_label = (watched == 0 ? std::string(tr("Addresses", "Адреса")) : tr("Addresses (", "Адреса (") + std::to_string(watched) + ")") + "###watch_page";
     const std::size_t chains = session_.pointers().rows().size();
     const std::string pointer_label =
-        (chains == 0 ? std::string("Указатели") : "Указатели (" + group_digits(chains) + ")") + "###pointer_page";
+        (chains == 0 ? std::string(tr("Pointers", "Указатели")) : tr("Pointers (", "Указатели (") + group_digits(chains) + ")") + "###pointer_page";
     const float right_edge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
     float segments_end = ImGui::GetCursorPosX();
     const auto segment = [&](const char* label, bool selected) {
@@ -1038,11 +1061,11 @@ void View::draw_page_switch() {
         segments_end += width;
         return ui::segment(label, selected, true, ImVec2(width, 0.0f));
     };
-    if (segment("Результаты", page_ == Page::Results)) {
+    if (segment(tr("Results", "Результаты"), page_ == Page::Results)) {
         page_ = Page::Results;
     }
     ImGui::SameLine(0.0f, 0.0f);
-    if (segment("Регионы", page_ == Page::Regions)) {
+    if (segment(tr("Regions", "Регионы"), page_ == Page::Regions)) {
         page_ = Page::Regions;
         if (!regions_loaded_) {
             refresh_regions();
@@ -1053,60 +1076,64 @@ void View::draw_page_switch() {
         page_ = Page::Watch;
         scroll_to_selection_ = true;
     }
-    ImGui::SetItemTooltip("Список адресов, за которыми вы следите");
+    ImGui::SetItemTooltip("%s", tr("The list of addresses you are watching", "Список адресов, за которыми вы следите"));
     ImGui::SameLine(0.0f, 0.0f);
     if (segment(pointer_label.c_str(), page_ == Page::Pointers)) {
         page_ = Page::Pointers;
         scroll_to_selection_ = true;
     }
-    ImGui::SetItemTooltip("Цепочки указателей, по которым адрес находится и после перезапуска программы");
+    ImGui::SetItemTooltip("%s", tr("Pointer chains that find the address again even after the program restarts",
+                                   "Цепочки указателей, по которым адрес находится и после перезапуска программы"));
     ImGui::SameLine(0.0f, 0.0f);
-    if (segment("Структура", page_ == Page::Structure)) {
+    if (segment(tr("Structure", "Структура"), page_ == Page::Structure)) {
         page_ = Page::Structure;
         scroll_to_selection_ = true;
     }
-    ImGui::SetItemTooltip("Поля структуры вокруг адреса: типы, имена и значения, которые обновляются на глазах");
+    ImGui::SetItemTooltip("%s", tr("Structure fields around the address: types, names, and values that update as you watch",
+                                   "Поля структуры вокруг адреса: типы, имена и значения, которые обновляются на глазах"));
     ImGui::SameLine(0.0f, 0.0f);
-    if (segment("Проверка", page_ == Page::Inspect)) {
+    if (segment(tr("Inspect", "Проверка"), page_ == Page::Inspect)) {
         page_ = Page::Inspect;
         scroll_to_selection_ = true;
     }
-    ImGui::SetItemTooltip("Поиск внедрённого кода: память вне модулей, RWX, PE-заголовки, изменённый код и подмена модулей");
+    ImGui::SetItemTooltip("%s", tr("Hunt for injected code: memory outside modules, RWX, PE headers, patched code, and module hollowing",
+                                   "Поиск внедрённого кода: память вне модулей, RWX, PE-заголовки, изменённый код и подмена модулей"));
     ImGui::SameLine(0.0f, 0.0f);
-    if (segment("Дизасм", page_ == Page::Disasm)) {
+    if (segment(tr("Disasm", "Дизасм"), page_ == Page::Disasm)) {
         page_ = Page::Disasm;
         scroll_to_selection_ = true;
         disasm_focus_ = !session_.disasm().has_result();
     }
-    ImGui::SetItemTooltip("Дизассемблировать машинный код по адресу: x86-64 и x86, Intel-синтаксис");
+    ImGui::SetItemTooltip("%s", tr("Disassemble machine code at an address: x86-64 and x86, Intel syntax",
+                                   "Дизассемблировать машинный код по адресу: x86-64 и x86, Intel-синтаксис"));
 
     const float filter_min = 150.0f * scale_;
     const float preview_width = std::floor(60.0f * scale_);
-    const float preview = ImGui::CalcTextSize("Превью").x + style.ItemSpacing.x * 3.0f + preview_width * 2.0f;
+    const float preview = ImGui::CalcTextSize(tr("Preview", "Превью")).x + style.ItemSpacing.x * 3.0f + preview_width * 2.0f;
     std::string value_count;
     if (page_ == Page::Results && value_mode()) {
         const ValueTable& values = session_.values();
-        value_count = !values.has_values() ? std::string("Пока нет результатов")
+        value_count = !values.has_values() ? std::string(tr("No results yet", "Пока нет результатов"))
                       : values.total() > values.rows().size()
-                          ? "Показаны первые " + group_digits(values.rows().size()) + " из " + group_digits(values.total())
-                          : "Показано " + count_addresses(values.total());
+                          ? tr("Showing the first ", "Показаны первые ") + group_digits(values.rows().size()) + tr(" of ", " из ") + group_digits(values.total())
+                          : tr("Showing ", "Показано ") + count_addresses(values.total());
     }
     float bar = 0.0f;
     if (page_ == Page::Watch) {
-        bar = buttons_width({"Добавить адрес…", "Очистить", "Найти указатели…", "Структура…"});
+        bar = buttons_width({tr("Add address…", "Добавить адрес…"), tr("Clear", "Очистить"), tr("Find pointers…", "Найти указатели…"), tr("Structure…", "Структура…")});
     } else if (page_ == Page::Pointers) {
-        bar = buttons_width({"Проверить…", "Сохранить…", "Загрузить…", "Очистить"});
+        bar = buttons_width({tr("Check…", "Проверить…"), tr("Save…", "Сохранить…"), tr("Load…", "Загрузить…"), tr("Clear", "Очистить")});
     } else if (page_ == Page::Inspect) {
         bar = inspect_bar_width();
     } else if (page_ == Page::Disasm) {
         bar = disasm_bar_width();
     } else if (page_ == Page::Structure) {
-        bar = buttons_width({"Открыть…", "Сравнить…", "Сохранить…", "Загрузить…"});
+        bar = buttons_width({tr("Open…", "Открыть…"), tr("Compare…", "Сравнить…"), tr("Save…", "Сохранить…"), tr("Load…", "Загрузить…")});
     } else if (page_ == Page::Results) {
         bar = value_mode() ? ImGui::CalcTextSize(value_count.c_str()).x : preview + filter_min;
     } else {
-        bar = buttons_width({"Обновить"}) + style.ItemSpacing.x * 2.0f + ImGui::GetFrameHeight() + style.ItemInnerSpacing.x +
-              ImGui::CalcTextSize("Только читаемые").x + filter_min;
+        bar = buttons_width({tr("Refresh", "Обновить")}) + style.ItemSpacing.x * 2.0f + ImGui::GetFrameHeight() + style.ItemInnerSpacing.x +
+              ImGui::CalcTextSize(tr("Readable only", "Только читаемые")).x + filter_min;
     }
     // In a narrow window the bar goes under the page switch instead of running off the edge.
     if (segments_end + 20.0f * scale_ + bar <= right_edge) {
@@ -1124,7 +1151,7 @@ void View::draw_page_switch() {
     } else if (page_ == Page::Disasm) {
         draw_disasm_bar(right_edge);
     } else if (page_ == Page::Results && value_mode()) {
-        const char* hint = "«Сейчас» обновляется дважды в секунду, рамка — значение изменилось";
+        const char* hint = tr("\"Now\" updates twice a second; a frame means the value changed", "«Сейчас» обновляется дважды в секунду, рамка — значение изменилось");
         const float hint_width = ImGui::CalcTextSize(hint).x;
         const float room = right_edge - ImGui::GetCursorPosX() - ImGui::CalcTextSize(value_count.c_str()).x;
         ImGui::AlignTextToFramePadding();
@@ -1138,8 +1165,8 @@ void View::draw_page_switch() {
     } else if (page_ == Page::Results) {
         ResultsTable& table = session_.table();
         const std::string count = table.has_results()
-                                      ? "Показано " + group_digits(table.rows().size()) + " из " + group_digits(table.results().matches.size())
-                                      : std::string("Пока нет результатов");
+                                      ? tr("Showing ", "Показано ") + group_digits(table.rows().size()) + tr(" of ", " из ") + group_digits(table.results().matches.size())
+                                      : std::string(tr("No results yet", "Пока нет результатов"));
         const float room = right_edge - ImGui::GetCursorPosX();
         const float count_width = ImGui::CalcTextSize(count.c_str()).x + 20.0f * scale_;
         // In a narrow window the filter keeps its room and the count goes.
@@ -1153,13 +1180,13 @@ void View::draw_page_switch() {
         } else {
             ImGui::SetCursorPosX(std::max(right_edge - total, ImGui::GetCursorPosX()));
         }
-        ui::muted("Превью");
+        ui::muted(tr("Preview", "Превью"));
         ImGui::SameLine();
         if (ui::segment("Hex", preview_ == PreviewMode::Hex, true, ImVec2(preview_width, 0.0f))) {
             preview_ = PreviewMode::Hex;
         }
         ImGui::SameLine(0.0f, 0.0f);
-        if (ui::segment("Текст", preview_ == PreviewMode::Text, true, ImVec2(preview_width, 0.0f))) {
+        if (ui::segment(tr("Text", "Текст"), preview_ == PreviewMode::Text, true, ImVec2(preview_width, 0.0f))) {
             preview_ = PreviewMode::Text;
         }
         ImGui::SameLine(0.0f, style.ItemSpacing.x * 2.0f);
@@ -1167,9 +1194,9 @@ void View::draw_page_switch() {
             ImGui::SetKeyboardFocusHere();
             focus_filter_ = false;
         }
-        const char* filter_hint = "Фильтр: адрес, текст, байты…   Ctrl+F";
+        const char* filter_hint = tr("Filter: address, text, bytes…   Ctrl+F", "Фильтр: адрес, текст, байты…   Ctrl+F");
         if (ImGui::CalcTextSize(filter_hint).x + style.FramePadding.x * 2.0f > filter_width) {
-            filter_hint = "Фильтр…   Ctrl+F";
+            filter_hint = tr("Filter…   Ctrl+F", "Фильтр…   Ctrl+F");
         }
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::InputTextWithHint("##filter", filter_hint, &filter_)) {
@@ -1177,11 +1204,11 @@ void View::draw_page_switch() {
             scroll_to_selection_ = true;
         }
     } else {
-        if (ui::button("Обновить")) {
+        if (ui::button(tr("Refresh", "Обновить"))) {
             refresh_regions();
         }
         ImGui::SameLine();
-        if (ImGui::Checkbox("Только читаемые", &readable_regions_only_)) {
+        if (ImGui::Checkbox(tr("Readable only", "Только читаемые"), &readable_regions_only_)) {
             rebuild_region_rows();
         }
         std::uint64_t bytes = 0;
@@ -1189,7 +1216,7 @@ void View::draw_page_switch() {
             bytes += regions_[row].size;
         }
         const std::string count =
-            "Показано " + group_digits(region_rows_.size()) + " из " + group_digits(regions_.size()) + ", " + format_size(bytes);
+            tr("Showing ", "Показано ") + group_digits(region_rows_.size()) + tr(" of ", " из ") + group_digits(regions_.size()) + ", " + format_size(bytes);
         ImGui::SameLine(0.0f, 20.0f * scale_);
         const float room = right_edge - ImGui::GetCursorPosX();
         const float count_width = ImGui::CalcTextSize(count.c_str()).x + 20.0f * scale_;
@@ -1201,7 +1228,7 @@ void View::draw_page_switch() {
         }
         ImGui::SameLine(right_edge - filter_width);
         ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::InputTextWithHint("##region_filter", "Фильтр: адрес, модуль, защита…", &region_filter_)) {
+        if (ImGui::InputTextWithHint("##region_filter", tr("Filter: address, module, protection…", "Фильтр: адрес, модуль, защита…"), &region_filter_)) {
             rebuild_region_rows();
         }
         if (!show_count) {
@@ -1238,13 +1265,14 @@ void View::draw_results_table(float height) {
     if (!table.has_results() || table.rows().empty()) {
         ImGui::BeginChild("##empty", ImVec2(0, height), ImGuiChildFlags_Borders, kPanel);
         if (session_.busy()) {
-            ui::muted("Идёт поиск…");
+            ui::muted(tr("Searching…", "Идёт поиск…"));
         } else if (table.has_results() && !table.filter().empty()) {
-            ui::muted("Фильтр скрыл все строки.");
+            ui::muted(tr("The filter hid every row.", "Фильтр скрыл все строки."));
         } else if (table.has_results()) {
-            ui::muted("Ничего не найдено. Проверьте написание, кодировку и типы памяти слева.");
+            ui::muted(tr("Nothing found. Check the spelling, the encoding, and the memory types on the left.",
+                         "Ничего не найдено. Проверьте написание, кодировку и типы памяти слева."));
         } else {
-            ui::muted("Здесь появятся найденные адреса.");
+            ui::muted(tr("The addresses you find will show up here.", "Здесь появятся найденные адреса."));
         }
         ImGui::EndChild();
         return;
@@ -1279,14 +1307,14 @@ void View::draw_results_table(float height) {
         const bool stretch = (column_flags & ImGuiTableColumnFlags_WidthStretch) != 0;
         ImGui::TableSetupColumn(label, column_flags, stretch ? 0.0f : widths[static_cast<std::size_t>(id)], static_cast<ImGuiID>(id));
     };
-    column("Адрес", ImGuiTableColumnFlags_DefaultSort, Column::Address);
-    column("Тип", 0, Column::Kind);
-    column("Шаблон", 0, Column::Pattern);
-    column("Длина", 0, Column::Length);
-    column("Защита", 0, Column::Protection);
-    column("Память", 0, Column::Type);
-    column("Модуль", 0, Column::Module);
-    column("Превью", ImGuiTableColumnFlags_WidthStretch, Column::Preview);
+    column(tr("Address", "Адрес"), ImGuiTableColumnFlags_DefaultSort, Column::Address);
+    column(tr("Type", "Тип"), 0, Column::Kind);
+    column(tr("Pattern", "Шаблон"), 0, Column::Pattern);
+    column(tr("Length", "Длина"), 0, Column::Length);
+    column(tr("Protection", "Защита"), 0, Column::Protection);
+    column(tr("Memory", "Память"), 0, Column::Type);
+    column(tr("Module", "Модуль"), 0, Column::Module);
+    column(tr("Preview", "Превью"), ImGuiTableColumnFlags_WidthStretch, Column::Preview);
     ImGui::TableSetupScrollFreeze(1, 1);
     ImGui::TableHeadersRow();
 
@@ -1328,23 +1356,23 @@ void View::draw_results_table(float height) {
                 table.select_row(index);
             }
             if (ImGui::BeginPopupContextItem("##menu")) {
-                if (ImGui::MenuItem("Копировать адрес")) {
+                if (ImGui::MenuItem(tr("Copy address", "Копировать адрес"))) {
                     copy_address(match.address);
                 }
-                if (ImGui::MenuItem("Копировать байты (hex)")) {
+                if (ImGui::MenuItem(tr("Copy bytes (hex)", "Копировать байты (hex)"))) {
                     ImGui::SetClipboardText(match_bytes_hex(results, match).c_str());
                 }
-                if (ImGui::MenuItem("Копировать текст")) {
+                if (ImGui::MenuItem(tr("Copy text", "Копировать текст"))) {
                     ImGui::SetClipboardText(match_text(results, match).c_str());
                 }
                 ImGui::Separator();
-                if (ImGui::MenuItem("В список адресов", "Insert")) {
+                if (ImGui::MenuItem(tr("Add to the address list", "В список адресов"), "Insert")) {
                     session_.add_watch(watch_entry_for(match.address, results.patterns[match.pattern].kind, match.length));
                 }
-                if (ImGui::MenuItem("Разобрать структуру…", "Ctrl+D")) {
+                if (ImGui::MenuItem(tr("Break down the structure…", "Разобрать структуру…"), "Ctrl+D")) {
                     open_struct_from_selection();
                 }
-                if (ImGui::MenuItem("Дизассемблировать")) {
+                if (ImGui::MenuItem(tr("Disassemble", "Дизассемблировать"))) {
                     disassemble_at(match.address);
                 }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
@@ -1392,11 +1420,12 @@ void View::draw_value_table(float height) {
     if (!values.has_values() || values.rows().empty()) {
         ImGui::BeginChild("##no_values", ImVec2(0, height), ImGuiChildFlags_Borders, kPanel);
         if (session_.busy()) {
-            ui::muted("Идёт поиск…");
+            ui::muted(tr("Searching…", "Идёт поиск…"));
         } else if (values.has_values()) {
-            ui::muted("Не осталось ни одного адреса. Нажмите «Новый поиск».");
+            ui::muted(tr("No addresses left. Press \"New search\".", "Не осталось ни одного адреса. Нажмите «Новый поиск»."));
         } else {
-            ui::muted("Здесь появятся адреса и их значения: сейчас и при прошлом поиске.");
+            ui::muted(tr("Addresses and their values will show up here: now and at the last search.",
+                         "Здесь появятся адреса и их значения: сейчас и при прошлом поиске."));
         }
         ImGui::EndChild();
         return;
@@ -1429,12 +1458,12 @@ void View::draw_value_table(float height) {
     if (!ImGui::BeginTable("##values", 6, flags, ImVec2(0, height), table_inner_width(widths))) {
         return;
     }
-    ImGui::TableSetupColumn("Адрес", 0, widths[0]);
-    ImGui::TableSetupColumn("Сейчас", 0, widths[1]);
-    ImGui::TableSetupColumn("Было", 0, widths[2]);
-    ImGui::TableSetupColumn("Защита", 0, widths[3]);
-    ImGui::TableSetupColumn("Память", 0, widths[4]);
-    ImGui::TableSetupColumn("Модуль", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn(tr("Address", "Адрес"), 0, widths[0]);
+    ImGui::TableSetupColumn(tr("Now", "Сейчас"), 0, widths[1]);
+    ImGui::TableSetupColumn(tr("Was", "Было"), 0, widths[2]);
+    ImGui::TableSetupColumn(tr("Protection", "Защита"), 0, widths[3]);
+    ImGui::TableSetupColumn(tr("Memory", "Память"), 0, widths[4]);
+    ImGui::TableSetupColumn(tr("Module", "Модуль"), ImGuiTableColumnFlags_WidthStretch);
     ImGui::TableSetupScrollFreeze(1, 1);
     ImGui::TableHeadersRow();
 
@@ -1475,21 +1504,21 @@ void View::draw_value_table(float height) {
                 values.select_row(index);
             }
             if (ImGui::BeginPopupContextItem("##menu")) {
-                if (ImGui::MenuItem("Копировать адрес")) {
+                if (ImGui::MenuItem(tr("Copy address", "Копировать адрес"))) {
                     copy_address(value.address);
                 }
-                if (ImGui::MenuItem("Копировать значение")) {
+                if (ImGui::MenuItem(tr("Copy value", "Копировать значение"))) {
                     const std::string text = live.readable ? values.current_text(index) : values.previous_text(index);
                     ImGui::SetClipboardText(text.c_str());
                 }
                 ImGui::Separator();
-                if (ImGui::MenuItem("В список адресов", "Insert")) {
+                if (ImGui::MenuItem(tr("Add to the address list", "В список адресов"), "Insert")) {
                     session_.add_watch(make_watch_entry(value.address, watch_type(values.candidates()->type)));
                 }
-                if (ImGui::MenuItem("Разобрать структуру…", "Ctrl+D")) {
+                if (ImGui::MenuItem(tr("Break down the structure…", "Разобрать структуру…"), "Ctrl+D")) {
                     open_struct_from_selection();
                 }
-                if (ImGui::MenuItem("Дизассемблировать")) {
+                if (ImGui::MenuItem(tr("Disassemble", "Дизассемблировать"))) {
                     disassemble_at(value.address);
                 }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
@@ -1636,25 +1665,28 @@ void View::draw_details(float height) {
         return;
     }
     if (!match) {
-        ui::heading(fonts_.heading, "ПОДРОБНОСТИ");
+        ui::heading(fonts_.heading, tr("DETAILS", "ПОДРОБНОСТИ"));
         if (watch_page) {
-            ui::muted(watch.empty() ? "Здесь будет адрес из списка, его тип и память вокруг него." : "Выберите строку в списке.");
+            ui::muted(watch.empty() ? tr("Here you will see an address from the list, its type, and the memory around it.", "Здесь будет адрес из списка, его тип и память вокруг него.")
+                                    : tr("Pick a row in the list.", "Выберите строку в списке."));
         } else if (pointer_page) {
-            ui::muted(pointers.has_chains() ? "Выберите строку в списке."
-                                            : "Здесь будет цепочка, куда она ведёт сейчас, и память там.");
+            ui::muted(pointers.has_chains() ? tr("Pick a row in the list.", "Выберите строку в списке.")
+                                            : tr("Here you will see a chain, where it leads right now, and the memory there.", "Здесь будет цепочка, куда она ведёт сейчас, и память там."));
         } else if (struct_page) {
-            ui::muted(structure.active() ? "Выберите поле в таблице." : "Здесь будет поле структуры, его адрес и память вокруг него.");
+            ui::muted(structure.active() ? tr("Pick a field in the table.", "Выберите поле в таблице.")
+                                         : tr("Here you will see a structure field, its address, and the memory around it.", "Здесь будет поле структуры, его адрес и память вокруг него."));
         } else if (inspect_page) {
-            ui::muted(session_.findings().rows().empty() ? "Здесь будет находка, её подробности и память по её адресу."
-                                                         : "Выберите строку в таблице.");
+            ui::muted(session_.findings().rows().empty() ? tr("Here you will see a finding, its details, and the memory at its address.", "Здесь будет находка, её подробности и память по её адресу.")
+                                                         : tr("Pick a row in the table.", "Выберите строку в таблице."));
         } else if (disasm_page) {
-            ui::muted(session_.disasm().rows().empty() ? "Здесь будут подробности инструкции и память по её адресу."
-                                                       : "Выберите строку в таблице.");
+            ui::muted(session_.disasm().rows().empty() ? tr("Here you will see instruction details and the memory at its address.", "Здесь будут подробности инструкции и память по её адресу.")
+                                                       : tr("Pick a row in the table.", "Выберите строку в таблице."));
         } else if (value_mode()) {
-            ui::muted(values.has_values() ? "Выберите строку в таблице." : "Здесь будет адрес, его значение и память вокруг него.");
+            ui::muted(values.has_values() ? tr("Pick a row in the table.", "Выберите строку в таблице.")
+                                          : tr("Here you will see an address, its value, and the memory around it.", "Здесь будет адрес, его значение и память вокруг него."));
         } else {
-            ui::muted(session_.table().has_results() ? "Выберите строку в таблице."
-                                                     : "Здесь будет совпадение, его регион и память вокруг него.");
+            ui::muted(session_.table().has_results() ? tr("Pick a row in the table.", "Выберите строку в таблице.")
+                                                     : tr("Here you will see a match, its region, and the memory around it.", "Здесь будет совпадение, его регион и память вокруг него."));
         }
         ImGui::EndChild();
         return;
@@ -1700,18 +1732,18 @@ void View::draw_details(float height) {
 void View::draw_match_info(const Match& match, float value_x) {
     const ResultsTable& table = session_.table();
     const ResultSet& results = table.results();
-    ui::heading(fonts_.heading, "СОВПАДЕНИЕ");
-    ui::field("Адрес", format_address(match.address), value_x, fonts_.mono);
+    ui::heading(fonts_.heading, tr("MATCH", "СОВПАДЕНИЕ"));
+    ui::field(tr("Address", "Адрес"), format_address(match.address), value_x, fonts_.mono);
     const PatternInfo& pattern = results.patterns[match.pattern];
-    ui::field("Шаблон", pattern.label, value_x);
-    ui::field("Тип", kind_name(pattern.kind), value_x);
-    ui::field("Длина", std::to_string(match.length) + " байт", value_x);
-    ui::muted("Сейчас");
+    ui::field(tr("Pattern", "Шаблон"), pattern.label, value_x);
+    ui::field(tr("Type", "Тип"), kind_name(pattern.kind), value_x);
+    ui::field(tr("Length", "Длина"), plural(match.length, false, "byte", "bytes", "байт", "байта", "байт"), value_x);
+    ui::muted(tr("Now", "Сейчас"));
     ImGui::SameLine(value_x);
     switch (live_state(results, session_.patterns(), match, dump_)) {
-        case LiveState::Same: ui::text("на месте"); break;
-        case LiveState::Changed: inverted_text("изменилось"); break;
-        case LiveState::Unreadable: ui::muted("не читается"); break;
+        case LiveState::Same: ui::text(tr("in place", "на месте")); break;
+        case LiveState::Changed: inverted_text(tr("changed", "изменилось")); break;
+        case LiveState::Unreadable: ui::muted(tr("unreadable", "не читается")); break;
     }
     ImGui::Spacing();
     draw_region_fields(results.region_of(match), match.address, table.module_of(match), value_x);
@@ -1720,10 +1752,10 @@ void View::draw_match_info(const Match& match, float value_x) {
 void View::draw_value_info(const ValueCandidate& value, float value_x) {
     const ValueCandidates& candidates = *session_.values().candidates();
     const std::size_t size = size_of(candidates.type);
-    ui::heading(fonts_.heading, "ЗНАЧЕНИЕ");
-    ui::field("Адрес", format_address(value.address), value_x, fonts_.mono);
-    ui::field("Тип", std::string(to_string(candidates.type)) + ", " + std::to_string(size) + " байт", value_x);
-    ui::muted("Сейчас");
+    ui::heading(fonts_.heading, tr("VALUE", "ЗНАЧЕНИЕ"));
+    ui::field(tr("Address", "Адрес"), format_address(value.address), value_x, fonts_.mono);
+    ui::field(tr("Type", "Тип"), std::string(to_string(candidates.type)) + ", " + plural(size, false, "byte", "bytes", "байт", "байта", "байт"), value_x);
+    ui::muted(tr("Now", "Сейчас"));
     ImGui::SameLine(value_x);
     if (dump_.all_readable(value.address, value.address + size)) {
         std::uint64_t bits = 0;
@@ -1735,26 +1767,26 @@ void View::draw_value_info(const ValueCandidate& value, float value_x) {
             ui::text(text);
         }
     } else {
-        ui::muted("не читается");
+        ui::muted(tr("unreadable", "не читается"));
     }
-    ui::field("Было", format_value(candidates.type, value.previous), value_x);
-    ImGui::SetItemTooltip("Значение при поиске %u", candidates.scans);
+    ui::field(tr("Was", "Было"), format_value(candidates.type, value.previous), value_x);
+    ImGui::SetItemTooltip(tr("The value at search %u", "Значение при поиске %u"), candidates.scans);
     ImGui::Spacing();
     const Region* region = candidates.region_of(value.address);
     draw_region_fields(region, value.address, region != nullptr ? region->module_name() : std::string(), value_x);
 }
 
 void View::draw_region_fields(const Region* region, std::uint64_t address, std::string_view module, float value_x) {
-    ui::heading(fonts_.heading, "РЕГИОН");
+    ui::heading(fonts_.heading, tr("REGION", "РЕГИОН"));
     if (region == nullptr) {
-        ui::muted("Регион неизвестен");
+        ui::muted(tr("Region unknown", "Регион неизвестен"));
         return;
     }
-    ui::field("Начало", format_address(region->base), value_x, fonts_.mono);
-    ui::field("Смещение", signed_offset(address, region->base), value_x, fonts_.mono);
-    ui::field("Размер", format_size(region->size), value_x);
-    ui::field("Защита", protection_to_string(region->protect) + "   " + std::string(to_string(region->type)), value_x);
-    ui::field("Модуль", module.empty() ? std::string_view("—") : module, value_x);
+    ui::field(tr("Start", "Начало"), format_address(region->base), value_x, fonts_.mono);
+    ui::field(tr("Offset", "Смещение"), signed_offset(address, region->base), value_x, fonts_.mono);
+    ui::field(tr("Size", "Размер"), format_size(region->size), value_x);
+    ui::field(tr("Protection", "Защита"), protection_to_string(region->protect) + "   " + std::string(to_string(region->type)), value_x);
+    ui::field(tr("Module", "Модуль"), module.empty() ? std::string_view("—") : module, value_x);
     if (!region->mapped_file.empty()) {
         ImGui::SetItemTooltip("%s", region->mapped_file.c_str());
     }
@@ -1764,13 +1796,13 @@ void View::draw_dump(const Match& match) {
     const float right_edge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
     ImGui::AlignTextToFramePadding();
     ImGui::PushFont(fonts_.heading);
-    ImGui::TextUnformatted("ПАМЯТЬ СЕЙЧАС");
+    ImGui::TextUnformatted(tr("MEMORY NOW", "ПАМЯТЬ СЕЙЧАС"));
     ImGui::PopFont();
-    ImGui::SetItemTooltip("Байты совпадения выделены инверсией, ?? — память не читается.");
-    const float checkbox_width = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize("Обновлять").x;
+    ImGui::SetItemTooltip("%s", tr("The matched bytes are highlighted inverted; ?? means the memory is unreadable.", "Байты совпадения выделены инверсией, ?? — память не читается."));
+    const float checkbox_width = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize(tr("Live", "Обновлять")).x;
     ImGui::SameLine(std::max(right_edge - checkbox_width, ImGui::GetCursorPosX()));
-    ImGui::Checkbox("Обновлять", &live_dump_);
-    ImGui::SetItemTooltip("Перечитывать память дважды в секунду");
+    ImGui::Checkbox(tr("Live", "Обновлять"), &live_dump_);
+    ImGui::SetItemTooltip("%s", tr("Re-read the memory twice a second", "Перечитывать память дважды в секунду"));
     ImGui::Separator();
 
     ImGui::PushFont(fonts_.mono);
@@ -1853,12 +1885,12 @@ void View::draw_regions(float height) {
         return;
     }
     const float address_width = font_text_width(fonts_.mono, "0x0000000000000000");
-    ImGui::TableSetupColumn("Начало", 0, address_width);
-    ImGui::TableSetupColumn("Размер", 0, ImGui::CalcTextSize("1023.99 KiB").x);
-    ImGui::TableSetupColumn("Состояние", 0, ImGui::CalcTextSize("Состояние").x);
-    ImGui::TableSetupColumn("Защита", 0, ImGui::CalcTextSize("rw- guard").x);
-    ImGui::TableSetupColumn("Тип", 0, ImGui::CalcTextSize("private").x);
-    ImGui::TableSetupColumn("Модуль или файл", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn(tr("Start", "Начало"), 0, address_width);
+    ImGui::TableSetupColumn(tr("Size", "Размер"), 0, ImGui::CalcTextSize("1023.99 KiB").x);
+    ImGui::TableSetupColumn(tr("State", "Состояние"), 0, ImGui::CalcTextSize(tr("State", "Состояние")).x);
+    ImGui::TableSetupColumn(tr("Protection", "Защита"), 0, ImGui::CalcTextSize("rw- guard").x);
+    ImGui::TableSetupColumn(tr("Type", "Тип"), 0, ImGui::CalcTextSize("private").x);
+    ImGui::TableSetupColumn(tr("Module or file", "Модуль или файл"), ImGuiTableColumnFlags_WidthStretch);
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableHeadersRow();
     ImGuiListClipper clipper;
@@ -1895,15 +1927,15 @@ void View::draw_no_process(float height) {
     ImGui::BeginGroup();
     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
     ImGui::PushFont(fonts_.heading);
-    ImGui::TextUnformatted("Процесс не выбран");
+    ImGui::TextUnformatted(tr("No process selected", "Процесс не выбран"));
     ImGui::PopFont();
-    ui::muted_wrapped("Выберите программу, память которой хотите изучить.");
+    ui::muted_wrapped(tr("Pick the program whose memory you want to study.", "Выберите программу, память которой хотите изучить."));
     ImGui::Spacing();
-    if (ui::button("Выбрать процесс   Ctrl+O", true, ImVec2(width, std::floor(ImGui::GetFrameHeight() * 1.3f)))) {
+    if (ui::button(tr("Select process   Ctrl+O", "Выбрать процесс   Ctrl+O"), true, ImVec2(width, std::floor(ImGui::GetFrameHeight() * 1.3f)))) {
         show_picker();
     }
     ImGui::Spacing();
-    ui::muted_wrapped("MemHunter только читает память: он ничего в ней не меняет.");
+    ui::muted_wrapped(tr("MemHunter only reads memory: it changes nothing in it.", "MemHunter только читает память: он ничего в ней не меняет."));
     ImGui::PopTextWrapPos();
     ImGui::EndGroup();
     ImGui::EndChild();
@@ -1921,57 +1953,57 @@ void View::draw_status_bar() {
     const Job* running = session_.job();
     const PointerRun& pointer_run = session_.pointer_run();
     if (running != nullptr && running->kind() == JobKind::Inspect) {
-        item("Время", format_seconds(running->elapsed_seconds()));
+        item(tr("Time", "Время"), format_seconds(running->elapsed_seconds()));
     } else if (running == nullptr && page_ == Page::Inspect) {
         const FindingList& findings = session_.findings();
-        item("Время", findings.has_report() ? format_seconds(findings.report().stats.seconds) : std::string("—"));
+        item(tr("Time", "Время"), findings.has_report() ? format_seconds(findings.report().stats.seconds) : std::string("—"));
     } else if (running != nullptr && running->kind() == JobKind::PointerCheck) {
         // A check follows the chains with a few small reads each, so a speed in bytes would mean little.
-        item("Время", format_seconds(running->elapsed_seconds()));
+        item(tr("Time", "Время"), format_seconds(running->elapsed_seconds()));
     } else if (running != nullptr && running->kind() == JobKind::PointerScan) {
-        item("Ошибок чтения", group_digits(running->progress().pointers.reading.read_failures.load(std::memory_order_relaxed)));
-        item("Время", format_seconds(running->elapsed_seconds()));
+        item(tr("Read errors", "Ошибок чтения"), group_digits(running->progress().pointers.reading.read_failures.load(std::memory_order_relaxed)));
+        item(tr("Time", "Время"), format_seconds(running->elapsed_seconds()));
     } else if (running == nullptr && page_ == Page::Pointers && pointer_run.threads > 0) {
-        item("Время", format_seconds(pointer_run.seconds));
-        item("Потоков", std::to_string(pointer_run.threads));
+        item(tr("Time", "Время"), format_seconds(pointer_run.seconds));
+        item(tr("Threads", "Потоков"), std::to_string(pointer_run.threads));
         if (pointer_run.kind == JobKind::PointerScan) {
-            item("Указателей в памяти", group_digits(pointer_run.pointers));
-            item("Ошибок чтения", group_digits(pointer_run.read_failures));
+            item(tr("Pointers in memory", "Указателей в памяти"), group_digits(pointer_run.pointers));
+            item(tr("Read errors", "Ошибок чтения"), group_digits(pointer_run.read_failures));
         }
     } else if (const Job* job = running) {
         const ScanProgress& progress = job->progress().current();
         const double seconds = job->elapsed_seconds();
         const double bytes = static_cast<double>(progress.bytes_done.load(std::memory_order_relaxed));
-        item("Скорость", seconds > 0.0 ? format_rate(bytes / seconds) : std::string("—"));
-        item("Ошибок чтения", group_digits(progress.read_failures.load(std::memory_order_relaxed)));
-        item("Время", format_seconds(seconds));
+        item(tr("Speed", "Скорость"), seconds > 0.0 ? format_rate(bytes / seconds) : std::string("—"));
+        item(tr("Read errors", "Ошибок чтения"), group_digits(progress.read_failures.load(std::memory_order_relaxed)));
+        item(tr("Time", "Время"), format_seconds(seconds));
     } else if (value_mode() && session_.value_run().threads > 0) {
         const ValueRun& run = session_.value_run();
         const double seconds = session_.last_seconds();
-        item("Скорость", seconds > 0.0 ? format_rate(static_cast<double>(run.bytes_read) / seconds) : std::string("—"));
-        item("Ошибок чтения", group_digits(run.read_failures));
-        item("Время", format_seconds(seconds));
-        item("Потоков", std::to_string(run.threads));
+        item(tr("Speed", "Скорость"), seconds > 0.0 ? format_rate(static_cast<double>(run.bytes_read) / seconds) : std::string("—"));
+        item(tr("Read errors", "Ошибок чтения"), group_digits(run.read_failures));
+        item(tr("Time", "Время"), format_seconds(seconds));
+        item(tr("Threads", "Потоков"), std::to_string(run.threads));
     } else if (!value_mode() && table.has_results()) {
         const ScanStats& stats = table.results().stats;
         const double seconds = session_.last_seconds();
-        item("Скорость", seconds > 0.0 ? format_rate(static_cast<double>(stats.bytes_read) / seconds) : std::string("—"));
-        item("Ошибок чтения", group_digits(stats.read_failures));
-        item("Время", format_seconds(seconds));
-        item("Потоков", std::to_string(stats.scan_threads));
-        item("Алгоритм", stats.algorithm);
+        item(tr("Speed", "Скорость"), seconds > 0.0 ? format_rate(static_cast<double>(stats.bytes_read) / seconds) : std::string("—"));
+        item(tr("Read errors", "Ошибок чтения"), group_digits(stats.read_failures));
+        item(tr("Time", "Время"), format_seconds(seconds));
+        item(tr("Threads", "Потоков"), std::to_string(stats.scan_threads));
+        item(tr("Algorithm", "Алгоритм"), stats.algorithm);
     } else {
-        item("Скорость", "—");
-        item("Ошибок чтения", "—");
-        item("Время", "—");
+        item(tr("Speed", "Скорость"), "—");
+        item(tr("Read errors", "Ошибок чтения"), "—");
+        item(tr("Time", "Время"), "—");
     }
-    const char* hints = page_ == Page::Watch       ? "Del убрать    F2 описание    Ctrl+C адрес    Ctrl+D структура    Ctrl+S экспорт"
-                        : page_ == Page::Pointers  ? "Insert в список адресов    Ctrl+C цепочка    Ctrl+D структура    Ctrl+S сохранить"
-                        : page_ == Page::Structure ? "F2 поле    Del сбросить    → ← раскрыть    Insert в список адресов    Ctrl+C адрес"
-                        : page_ == Page::Inspect   ? "F5 проверить    Esc стоп    Ctrl+C адрес"
-                        : page_ == Page::Disasm    ? "F5 обновить    Ctrl+C адрес    Ctrl+B байты    Ctrl+T текст"
-                        : value_mode()            ? "F5 искать    Esc стоп    Insert в список    Ctrl+C адрес    Ctrl+S экспорт"
-                                                  : "F5 найти    Esc стоп    Ctrl+F фильтр    Insert в список    Ctrl+S экспорт";
+    const char* hints = page_ == Page::Watch       ? tr("Del remove    F2 note    Ctrl+C address    Ctrl+D structure    Ctrl+S export", "Del убрать    F2 описание    Ctrl+C адрес    Ctrl+D структура    Ctrl+S экспорт")
+                        : page_ == Page::Pointers  ? tr("Insert to the address list    Ctrl+C chain    Ctrl+D structure    Ctrl+S save", "Insert в список адресов    Ctrl+C цепочка    Ctrl+D структура    Ctrl+S сохранить")
+                        : page_ == Page::Structure ? tr("F2 field    Del reset    → ← expand    Insert to the address list    Ctrl+C address", "F2 поле    Del сбросить    → ← раскрыть    Insert в список адресов    Ctrl+C адрес")
+                        : page_ == Page::Inspect   ? tr("F5 check    Esc stop    Ctrl+C address", "F5 проверить    Esc стоп    Ctrl+C адрес")
+                        : page_ == Page::Disasm    ? tr("F5 refresh    Ctrl+C address    Ctrl+B bytes    Ctrl+T text", "F5 обновить    Ctrl+C адрес    Ctrl+B байты    Ctrl+T текст")
+                        : value_mode()            ? tr("F5 search    Esc stop    Insert to the list    Ctrl+C address    Ctrl+S export", "F5 искать    Esc стоп    Insert в список    Ctrl+C адрес    Ctrl+S экспорт")
+                                                  : tr("F5 find    Esc stop    Ctrl+F filter    Insert to the list    Ctrl+S export", "F5 найти    Esc стоп    Ctrl+F фильтр    Insert в список    Ctrl+S экспорт");
     const float hints_width = ImGui::CalcTextSize(hints).x;
     const float right_edge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
     if (right_edge - hints_width > ImGui::GetCursorPosX()) {
@@ -2006,14 +2038,14 @@ void View::draw_picker() {
     bool close = ImGui::IsKeyPressed(ImGuiKey_Escape, false);
     std::optional<std::uint32_t> open;
 
-    ui::heading(fonts_.heading, "ВЫБОР ПРОЦЕССА");
-    const char* refresh_label = "Обновить";
+    ui::heading(fonts_.heading, tr("SELECT PROCESS", "ВЫБОР ПРОЦЕССА"));
+    const char* refresh_label = tr("Refresh", "Обновить");
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - button_width(refresh_label) - style.ItemSpacing.x);
     if (picker_focus_) {
         ImGui::SetKeyboardFocusHere();
         picker_focus_ = false;
     }
-    ImGui::InputTextWithHint("##process_filter", "Имя или PID", &process_filter_);
+    ImGui::InputTextWithHint("##process_filter", tr("Name or PID", "Имя или PID"), &process_filter_);
     ImGui::SameLine();
     if (ui::button(refresh_label)) {
         refresh_processes();
@@ -2032,10 +2064,10 @@ void View::draw_picker() {
     constexpr ImGuiTableFlags table_flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV |
                                             ImGuiTableFlags_Sortable | ImGuiTableFlags_SizingFixedFit;
     if (ImGui::BeginTable("##processes", 4, table_flags, ImVec2(0, std::max(ImGui::GetContentRegionAvail().y - footer, 60.0f)))) {
-        ImGui::TableSetupColumn("Имя", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_DefaultSort, 0.0f, 0);
+        ImGui::TableSetupColumn(tr("Name", "Имя"), ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_DefaultSort, 0.0f, 0);
         ImGui::TableSetupColumn("PID", 0, 80.0f * scale_, 1);
-        ImGui::TableSetupColumn("Потоков", 0, 80.0f * scale_, 2);
-        ImGui::TableSetupColumn("Родитель", 0, 90.0f * scale_, 3);
+        ImGui::TableSetupColumn(tr("Threads", "Потоков"), 0, 80.0f * scale_, 2);
+        ImGui::TableSetupColumn(tr("Parent", "Родитель"), 0, 90.0f * scale_, 3);
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();
         if (ImGuiTableSortSpecs* specs = ImGui::TableGetSortSpecs(); specs != nullptr && specs->SpecsCount > 0) {
@@ -2102,23 +2134,27 @@ void View::draw_picker() {
 
     ImGui::Separator();
     ImGui::AlignTextToFramePadding();
-    ui::muted(group_digits(visible.size()) + " из " + group_digits(processes_.size()));
+    ui::muted(group_digits(visible.size()) + tr(" of ", " из ") + group_digits(processes_.size()));
     ImGui::SameLine(0.0f, 24.0f * scale_);
     bool privileged = debug_privilege_;
-    if (ImGui::Checkbox("Права отладки", &privileged)) {
+    if (ImGui::Checkbox(tr("Debug rights", "Права отладки"), &privileged)) {
         if (set_debug_privilege(privileged)) {
             picker_error_.clear();
         }
     }
-    ImGui::SetItemTooltip("SeDebugPrivilege: открывает процессы других пользователей и служб. Нужен запуск MemHunter от имени "
-                          "администратора. Защищённые процессы (PPL) не открываются и так.");
-    const float buttons = button_width("Открыть") + button_width("Отмена") + style.ItemSpacing.x;
+    ImGui::SetItemTooltip("%s", tr("SeDebugPrivilege: opens processes of other users and services. MemHunter must be run as "
+                                   "administrator. Protected processes (PPL) stay closed regardless.",
+                                   "SeDebugPrivilege: открывает процессы других пользователей и служб. Нужен запуск MemHunter от имени "
+                                   "администратора. Защищённые процессы (PPL) не открываются и так."));
+    const char* open_label = tr("Open", "Открыть");
+    const char* cancel_label = tr("Cancel", "Отмена");
+    const float buttons = button_width(open_label) + button_width(cancel_label) + style.ItemSpacing.x;
     ImGui::SameLine(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - buttons);
-    if (ui::button("Открыть", choice.has_value())) {
+    if (ui::button(open_label, choice.has_value())) {
         open = choice;
     }
     ImGui::SameLine();
-    if (ui::button("Отмена")) {
+    if (ui::button(cancel_label)) {
         close = true;
     }
 

@@ -20,12 +20,14 @@
 #include "gui/watch_list.hpp"
 #include "support/fake_memory.hpp"
 #include "support/fake_target.hpp"
+#include "support/language_guard.hpp"
 
 namespace mh::gui {
 namespace {
 
 using mh::testing::FakeMemory;
 using mh::testing::FakeTarget;
+using mh::testing::LanguageGuard;
 using namespace std::chrono_literals;
 
 constexpr std::uint64_t kBase = 0x10000;
@@ -56,6 +58,7 @@ bool contains(std::string_view text, std::string_view part) {
 }
 
 TEST(GuiSearch, NumbersBecomeLittleEndianBytes) {
+    LanguageGuard ru{Lang::Russian};
     EXPECT_EQ(hex("15000", NumberType::Int32), "98 3A 00 00");
     EXPECT_EQ(hex(" 0x3A98 ", NumberType::Int32), "98 3A 00 00");
     EXPECT_EQ(hex("-1", NumberType::Int16), "FF FF");
@@ -83,6 +86,7 @@ TEST(GuiSearch, NumbersBecomeLittleEndianBytes) {
 }
 
 TEST(GuiSearch, RequestFollowsTheSelectedMode) {
+    LanguageGuard ru{Lang::Russian};
     SearchForm form;
     EXPECT_THROW(build_request(form), Error);
 
@@ -207,6 +211,7 @@ TEST(GuiSearch, ValueConditionsFromTheForm) {
 }
 
 TEST(GuiText, CountsUseRussianPlurals) {
+    LanguageGuard ru{Lang::Russian};
     EXPECT_EQ(count_addresses(1), "1 адрес");
     EXPECT_EQ(count_addresses(3), "3 адреса");
     EXPECT_EQ(count_addresses(11), "11 адресов");
@@ -221,6 +226,24 @@ TEST(GuiText, CountsUseRussianPlurals) {
     EXPECT_EQ(count_matches(1234567), "1 234 567 совпадений");
     EXPECT_EQ(group_digits(999), "999");
     EXPECT_EQ(format_seconds(0.5), "0.50 с");
+}
+
+TEST(GuiLanguage, DefaultsToEnglishAndToggles) {
+    // The app starts in English; every LanguageGuard restores it afterwards.
+    EXPECT_EQ(current_language(), Lang::English);
+    EXPECT_STREQ(tr("Find", "Найти"), "Find");
+    EXPECT_EQ(count_addresses(1), "1 address");
+    EXPECT_EQ(count_addresses(3), "3 addresses");
+    EXPECT_EQ(count_matches(1), "1 match");
+    EXPECT_EQ(format_seconds(0.5), "0.50 s");
+    {
+        LanguageGuard ru{Lang::Russian};
+        EXPECT_EQ(current_language(), Lang::Russian);
+        EXPECT_STREQ(tr("Find", "Найти"), "Найти");
+        EXPECT_EQ(count_addresses(1), "1 адрес");
+        EXPECT_EQ(count_matches(1), "1 совпадение");
+    }
+    EXPECT_EQ(current_language(), Lang::English);
 }
 
 // "password" three times as ASCII, once as UTF-16 and once in upper case.
@@ -246,6 +269,8 @@ protected:
 
     void attach(Session& session) { session.attach(std::make_unique<FakeTarget>(memory_)); }
 
+    // These tests check the Russian wording of results, so pin the language.
+    LanguageGuard language_{Lang::Russian};
     FakeMemory memory_;
 };
 
@@ -651,6 +676,7 @@ std::shared_ptr<const ValueCandidates> candidates(unsigned scan, std::size_t cou
 }
 
 TEST(GuiHistory, DescribesTheScans) {
+    LanguageGuard ru{Lang::Russian};
     SearchForm form;
     form.number = " 86 ";
     EXPECT_EQ(describe_scan(form, NumberType::Int32, true), "int32 = 86");
@@ -800,6 +826,7 @@ TEST_F(GuiScan, HistoryGoesBackToAnEarlierScan) {
 }
 
 TEST(GuiWatch, ShowsValuesOfEveryType) {
+    LanguageGuard ru{Lang::Russian};
     FakeMemory memory;
     memory.add(kBase, FakeMemory::kPage);
     put<std::int8_t>(memory, kBase, -5);
@@ -1083,6 +1110,7 @@ TEST(GuiPicker, EnterOpensTheOnlyProcessShownWhenThePickedOneIsFilteredOut) {
 }
 
 TEST(GuiErrors, AccessDeniedIsExplained) {
+    LanguageGuard ru{Lang::Russian};
     const std::string text = describe_error(Error(ErrorCode::AccessDenied, "access denied"));
     EXPECT_TRUE(text.starts_with("Нет доступа к процессу")) << text;
     EXPECT_EQ(describe_error(Error(ErrorCode::InvalidPattern, "bad")), "bad");

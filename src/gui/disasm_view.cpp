@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "common/text.hpp"
+#include "gui/lang.hpp"
 #include "gui/view.hpp"
 #include "gui/view_internal.hpp"
 #include "gui/widgets.hpp"
@@ -37,7 +38,8 @@ void View::run_disasm() {
     }
     const std::optional<std::uint64_t> address = parse_address(disasm_address_);
     if (!address) {
-        disasm_error_ = "Адрес — шестнадцатеричное число, например 0x7FF6A0001000.";
+        disasm_error_ = tr("The address is a hexadecimal number, for example 0x7FF6A0001000.",
+                           "Адрес — шестнадцатеричное число, например 0x7FF6A0001000.");
         disasm_focus_ = true;
         return;
     }
@@ -62,10 +64,10 @@ void View::handle_disasm_shortcuts(bool copy) {
         copy_address(line->address);
     } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_B)) {
         ImGui::SetClipboardText(line->bytes.c_str());
-        session_.set_notice("Байты скопированы", false);
+        session_.set_notice(tr("Bytes copied", "Байты скопированы"), false);
     } else if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_T)) {
         ImGui::SetClipboardText(line->text.c_str());
-        session_.set_notice("Инструкция скопирована", false);
+        session_.set_notice(tr("Instruction copied", "Инструкция скопирована"), false);
     } else if (line->has_target && ImGui::IsKeyPressed(ImGuiKey_Enter, false)) {
         disassemble_at(line->target_address);
     }
@@ -74,15 +76,16 @@ void View::handle_disasm_shortcuts(bool copy) {
 void View::draw_disasm_progress() {
     const DisasmTable& disasm = session_.disasm();
     if (!disasm.has_result()) {
-        ui::progress_bar(0.0f, "Ожидание");
-        ui::muted("Введите адрес и нажмите «Показать» или F5, чтобы разобрать машинный код.");
+        ui::progress_bar(0.0f, tr("Waiting", "Ожидание"));
+        ui::muted(tr("Enter an address and press «Show» or F5 to disassemble machine code.",
+                     "Введите адрес и нажмите «Показать» или F5, чтобы разобрать машинный код."));
         return;
     }
-    ui::progress_bar(1.0f, "Готово");
+    ui::progress_bar(1.0f, tr("Done", "Готово"));
     const std::initializer_list<std::pair<const char*, std::string>> parts = {
-        {"Адрес", format_address(disasm.address())},
-        {"Разрядность", disasm.wow64() ? std::string("32") : std::string("64")},
-        {"Инструкций", count_instructions(disasm.rows().size())}};
+        {tr("Address", "Адрес"), format_address(disasm.address())},
+        {tr("Bitness", "Разрядность"), disasm.wow64() ? std::string("32") : std::string("64")},
+        {tr("Instructions", "Инструкций"), count_instructions(disasm.rows().size())}};
     bool first = true;
     for (const auto& [label, value] : parts) {
         if (!first) {
@@ -99,7 +102,7 @@ float View::disasm_bar_width() const {
     const ImGuiStyle& style = ImGui::GetStyle();
     const float address = font_text_width(fonts_.mono, "0x0000000000000000") + style.FramePadding.x * 2.0f;
     const float count = std::floor(64.0f * scale_);
-    return address + count + ImGui::CalcTextSize("инстр.").x + button_width("Показать") + style.ItemSpacing.x * 4.0f;
+    return address + count + ImGui::CalcTextSize(tr("instr.", "инстр.")).x + button_width(tr("Show", "Показать")) + style.ItemSpacing.x * 4.0f;
 }
 
 void View::draw_disasm_bar(float right_edge) {
@@ -117,18 +120,19 @@ void View::draw_disasm_bar(float right_edge) {
     ImGui::PushFont(fonts_.mono);
     const bool submit = ImGui::InputTextWithHint("##disasm_address", "0x7FF6A0001000", &disasm_address_, ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::PopFont();
-    ImGui::SetItemTooltip("Адрес в памяти процесса, шестнадцатеричный");
+    ImGui::SetItemTooltip("%s", tr("Address in the process's memory, hexadecimal", "Адрес в памяти процесса, шестнадцатеричный"));
 
     ImGui::SameLine();
     ImGui::SetNextItemWidth(std::floor(64.0f * scale_));
     const bool count_submit = ImGui::InputInt("##disasm_count", &disasm_count_, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
-    ui::muted("инстр.");
-    ImGui::SetItemTooltip("Сколько инструкций разобрать, от %d до %d", kMinDisasmCount, kMaxDisasmCount);
+    ui::muted(tr("instr.", "инстр."));
+    ImGui::SetItemTooltip(tr("How many instructions to disassemble, from %d to %d", "Сколько инструкций разобрать, от %d до %d"),
+                          kMinDisasmCount, kMaxDisasmCount);
 
     ImGui::SameLine();
-    const bool clicked = ui::button("Показать", enabled);
-    ImGui::SetItemTooltip("Разобрать машинный код по адресу.  F5");
+    const bool clicked = ui::button(tr("Show", "Показать"), enabled);
+    ImGui::SetItemTooltip("%s", tr("Disassemble the machine code at the address.  F5", "Разобрать машинный код по адресу.  F5"));
     ImGui::EndDisabled();
 
     if (enabled && (submit || count_submit || clicked)) {
@@ -144,12 +148,15 @@ void View::draw_disasm_table(float height) {
     if (disasm.rows().empty()) {
         ImGui::BeginChild("##no_disasm", ImVec2(0, height), ImGuiChildFlags_Borders, kPanel);
         if (!disasm.has_result()) {
-            ui::muted_wrapped("Здесь будут инструкции x86/x64 по адресу: адрес, байты, инструкция и, для переходов и вызовов, модуль и "
-                              "смещение, куда они ведут. Введите адрес над таблицей и нажмите «Показать» или F5.");
+            ui::muted_wrapped(tr("Here will be x86/x64 instructions at an address: the address, bytes, the instruction, and, for jumps "
+                                 "and calls, the module and offset they lead to. Enter an address above the table and press «Show» or F5.",
+                                 "Здесь будут инструкции x86/x64 по адресу: адрес, байты, инструкция и, для переходов и вызовов, модуль и "
+                                 "смещение, куда они ведут. Введите адрес над таблицей и нажмите «Показать» или F5."));
             ImGui::Spacing();
-            ui::muted_wrapped("Разобрать код можно и из контекстного меню на любой находке, адресе, поле структуры или совпадении.");
+            ui::muted_wrapped(tr("Code can also be disassembled from the context menu on any finding, address, structure field, or match.",
+                                 "Разобрать код можно и из контекстного меню на любой находке, адресе, поле структуры или совпадении."));
         } else {
-            ui::text("В " + format_address(disasm.address()) + " нечего читать.");
+            ui::text(tr("Nothing to read at ", "В ") + format_address(disasm.address()) + tr(".", " нечего читать."));
         }
         ImGui::EndChild();
         return;
@@ -169,10 +176,10 @@ void View::draw_disasm_table(float height) {
     if (!ImGui::BeginTable("##disasm", 4, flags, ImVec2(0, height))) {
         return;
     }
-    ImGui::TableSetupColumn("Адрес", 0, font_text_width(fonts_.mono, "0x0000000000000000"));
-    ImGui::TableSetupColumn("Байты", 0, font_text_width(fonts_.mono, "00 00 00 00 00 00"));
-    ImGui::TableSetupColumn("Инструкция", ImGuiTableColumnFlags_WidthStretch, 2.0f);
-    ImGui::TableSetupColumn("Переход", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+    ImGui::TableSetupColumn(tr("Address", "Адрес"), 0, font_text_width(fonts_.mono, "0x0000000000000000"));
+    ImGui::TableSetupColumn(tr("Bytes", "Байты"), 0, font_text_width(fonts_.mono, "00 00 00 00 00 00"));
+    ImGui::TableSetupColumn(tr("Instruction", "Инструкция"), ImGuiTableColumnFlags_WidthStretch, 2.0f);
+    ImGui::TableSetupColumn(tr("Jump", "Переход"), ImGuiTableColumnFlags_WidthStretch, 1.0f);
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableHeadersRow();
 
@@ -202,18 +209,18 @@ void View::draw_disasm_table(float height) {
                 disasm.select_row(index);
             }
             if (ImGui::BeginPopupContextItem("##menu")) {
-                if (ImGui::MenuItem("Копировать адрес", "Ctrl+C")) {
+                if (ImGui::MenuItem(tr("Copy address", "Копировать адрес"), "Ctrl+C")) {
                     copy_address(line.address);
                 }
-                if (ImGui::MenuItem("Копировать байты", "Ctrl+B")) {
+                if (ImGui::MenuItem(tr("Copy bytes", "Копировать байты"), "Ctrl+B")) {
                     ImGui::SetClipboardText(line.bytes.c_str());
-                    session_.set_notice("Байты скопированы", false);
+                    session_.set_notice(tr("Bytes copied", "Байты скопированы"), false);
                 }
-                if (ImGui::MenuItem("Копировать инструкцию", "Ctrl+T")) {
+                if (ImGui::MenuItem(tr("Copy instruction", "Копировать инструкцию"), "Ctrl+T")) {
                     ImGui::SetClipboardText(line.text.c_str());
-                    session_.set_notice("Инструкция скопирована", false);
+                    session_.set_notice(tr("Instruction copied", "Инструкция скопирована"), false);
                 }
-                if (ImGui::MenuItem("Перейти к переходу", "Enter", false, line.has_target)) {
+                if (ImGui::MenuItem(tr("Go to jump target", "Перейти к переходу"), "Enter", false, line.has_target)) {
                     disassemble_at(line.target_address);
                 }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
@@ -252,22 +259,24 @@ void View::draw_disasm_table(float height) {
 }
 
 void View::draw_disasm_info(const DisasmLine& line, float value_x) {
-    ui::heading(fonts_.heading, "ИНСТРУКЦИЯ");
-    ui::field("Адрес", format_address(line.address), value_x, fonts_.mono);
-    ui::field("Байты", line.bytes, value_x, fonts_.mono);
-    ui::field("Размер", std::to_string(line.size) + (line.size == 1 ? " байт" : line.size >= 2 && line.size <= 4 ? " байта" : " байт"),
-              value_x);
-    ui::field("Инструкция", line.text, value_x, fonts_.mono);
+    ui::heading(fonts_.heading, tr("INSTRUCTION", "ИНСТРУКЦИЯ"));
+    ui::field(tr("Address", "Адрес"), format_address(line.address), value_x, fonts_.mono);
+    ui::field(tr("Bytes", "Байты"), line.bytes, value_x, fonts_.mono);
+    ui::field(tr("Size", "Размер"), plural(line.size, false, "byte", "bytes", "байт", "байта", "байт"), value_x);
+    ui::field(tr("Instruction", "Инструкция"), line.text, value_x, fonts_.mono);
     if (!line.target.empty()) {
-        ui::field("Переход", line.target, value_x, fonts_.mono);
+        ui::field(tr("Jump", "Переход"), line.target, value_x, fonts_.mono);
     } else if (line.has_target) {
-        ui::field("Переход", format_address(line.target_address), value_x, fonts_.mono);
+        ui::field(tr("Jump", "Переход"), format_address(line.target_address), value_x, fonts_.mono);
     }
     ImGui::Spacing();
     if (!line.valid) {
-        ui::muted_wrapped("Этот байт не удалось разобрать как инструкцию, он показан как «db». Дизассемблер продолжил со следующего байта.");
+        ui::muted_wrapped(tr("This byte could not be decoded as an instruction and is shown as «db». The disassembler continued from "
+                             "the next byte.",
+                             "Этот байт не удалось разобрать как инструкцию, он показан как «db». Дизассемблер продолжил со следующего байта."));
     } else if (line.has_target) {
-        ui::muted_wrapped("Переход или вызов. Enter или «Перейти к переходу» разбирает код по целевому адресу.");
+        ui::muted_wrapped(tr("A jump or call. Enter or «Go to jump target» disassembles the code at the target address.",
+                             "Переход или вызов. Enter или «Перейти к переходу» разбирает код по целевому адресу."));
     }
 }
 

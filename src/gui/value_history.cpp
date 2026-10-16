@@ -4,6 +4,8 @@
 #include <string_view>
 #include <utility>
 
+#include "gui/lang.hpp"
+
 namespace mh::gui {
 namespace {
 
@@ -22,12 +24,12 @@ std::string condition_text(const SearchForm& form) {
         case Compare::Exact: return "= " + number;
         case Compare::Greater: return "> " + number;
         case Compare::Less: return "< " + number;
-        case Compare::Between: return "от " + number + " до " + std::string(trimmed(form.number_high));
-        case Compare::Unknown: return "неизвестное";
-        case Compare::Increased: return "Увеличилось";
-        case Compare::Decreased: return "Уменьшилось";
-        case Compare::Changed: return "Изменилось";
-        case Compare::Unchanged: return "Не изменилось";
+        case Compare::Between: return tr("from ", "от ") + number + tr(" to ", " до ") + std::string(trimmed(form.number_high));
+        case Compare::Unknown: return tr("unknown", "неизвестное");
+        case Compare::Increased: return tr("Increased", "Увеличилось");
+        case Compare::Decreased: return tr("Decreased", "Уменьшилось");
+        case Compare::Changed: return tr("Changed", "Изменилось");
+        case Compare::Unchanged: return tr("Unchanged", "Не изменилось");
     }
     return {};
 }

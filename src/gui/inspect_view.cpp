@@ -6,6 +6,7 @@
 
 #include "common/error.hpp"
 #include "common/text.hpp"
+#include "gui/lang.hpp"
 #include "gui/view.hpp"
 #include "gui/view_internal.hpp"
 #include "gui/widgets.hpp"
@@ -20,11 +21,11 @@ constexpr std::array<FindingKind, kFindingKindCount> kKinds = {FindingKind::Exec
 
 const char* kind_label(FindingKind kind) {
     switch (kind) {
-        case FindingKind::ExecPrivate: return "Вне модулей";
-        case FindingKind::PeHeader: return "PE-заголовок";
+        case FindingKind::ExecPrivate: return tr("Outside modules", "Вне модулей");
+        case FindingKind::PeHeader: return tr("PE header", "PE-заголовок");
         case FindingKind::Rwx: return "RWX";
-        case FindingKind::Patched: return "Изменён код";
-        case FindingKind::Hollowed: return "Подмена";
+        case FindingKind::Patched: return tr("Changed code", "Изменён код");
+        case FindingKind::Hollowed: return tr("Replaced", "Подмена");
     }
     return "";
 }
@@ -32,20 +33,30 @@ const char* kind_label(FindingKind kind) {
 const char* kind_explanation(FindingKind kind) {
     switch (kind) {
         case FindingKind::ExecPrivate:
-            return "Исполняемая память, которая не принадлежит ни одному модулю (exe или dll). Так выглядит внедрённый код, но так же "
-                   "работают JIT-компиляторы: .NET, Java, JavaScript в браузерах.";
+            return tr("Executable memory that belongs to no module (exe or dll). Injected code looks like this, but so do JIT "
+                      "compilers: .NET, Java, JavaScript in browsers.",
+                      "Исполняемая память, которая не принадлежит ни одному модулю (exe или dll). Так выглядит внедрённый код, но так же "
+                      "работают JIT-компиляторы: .NET, Java, JavaScript в браузерах.");
         case FindingKind::PeHeader:
-            return "Заголовок exe или dll в обычной памяти, а не в загруженном модуле. Так выглядит модуль, загруженный вручную в обход "
-                   "загрузчика Windows; так же делают некоторые защиты и упаковщики.";
+            return tr("A header of an exe or dll in ordinary memory rather than in a loaded module. A module loaded by hand, bypassing "
+                      "the Windows loader, looks like this; some protections and packers do the same.",
+                      "Заголовок exe или dll в обычной памяти, а не в загруженном модуле. Так выглядит модуль, загруженный вручную в обход "
+                      "загрузчика Windows; так же делают некоторые защиты и упаковщики.");
         case FindingKind::Rwx:
-            return "Память, в которую можно и писать, и исполнять её. Обычные программы так её почти не держат; бывает у "
-                   "JIT-компиляторов, упаковщиков и внедрённого кода.";
+            return tr("Memory that can be both written and executed. Ordinary programs almost never keep it so; it happens with JIT "
+                      "compilers, packers, and injected code.",
+                      "Память, в которую можно и писать, и исполнять её. Обычные программы так её почти не держат; бывает у "
+                      "JIT-компиляторов, упаковщиков и внедрённого кода.");
         case FindingKind::Patched:
-            return "Код модуля в памяти отличается от его файла на диске с учётом перемещений. Так выглядят перехваты (hooks): их ставят "
-                   "антивирусы, оверлеи Steam и Discord, песочницы браузеров, а .NET правит свой код сам.";
+            return tr("A module's code in memory differs from its file on disk, relocations accounted for. Hooks look like this: "
+                      "antiviruses, the Steam and Discord overlays, and browser sandboxes set them, and .NET edits its own code.",
+                      "Код модуля в памяти отличается от его файла на диске с учётом перемещений. Так выглядят перехваты (hooks): их ставят "
+                      "антивирусы, оверлеи Steam и Discord, песочницы браузеров, а .NET правит свой код сам.");
         case FindingKind::Hollowed:
-            return "Модуль не совпадает со своим файлом: файл удалён или заменён, заголовки стёрты, или на месте главного образа "
-                   "программы что-то другое. Так выглядит подмена процесса (process hollowing).";
+            return tr("A module does not match its file: the file was deleted or replaced, the headers were wiped, or something else "
+                      "sits where the program's main image should be. Process hollowing looks like this.",
+                      "Модуль не совпадает со своим файлом: файл удалён или заменён, заголовки стёрты, или на месте главного образа "
+                      "программы что-то другое. Так выглядит подмена процесса (process hollowing).");
     }
     return "";
 }
@@ -80,7 +91,8 @@ bool View::set_debug_privilege(bool enabled) {
         privilege_error_.clear();
     } catch (const Error& error) {
         privilege_error_ = error.code() == ErrorCode::AccessDenied
-                               ? "Права отладки есть только у администратора. Запустите MemHunter от имени администратора и включите их снова."
+                               ? tr("Only an administrator has debug privilege. Run MemHunter as administrator and turn it on again.",
+                                    "Права отладки есть только у администратора. Запустите MemHunter от имени администратора и включите их снова.")
                                : describe_error(error);
     }
     debug_privilege_ = debug_privilege_enabled();
@@ -109,23 +121,25 @@ void View::handle_inspect_shortcuts(bool copy) {
 void View::draw_inspect_progress(const Job* running) {
     const FindingList& findings = session_.findings();
     if (running != nullptr) {
-        ui::progress_bar(0.0f, std::string(running->cancel_requested() ? "Остановка…" : "Проверка памяти") + "   " +
+        ui::progress_bar(0.0f, std::string(running->cancel_requested() ? tr("Stopping…", "Остановка…") : tr("Checking memory", "Проверка памяти")) + "   " +
                                    format_seconds(running->elapsed_seconds()));
-        ui::muted("Код модулей сравнивается с их файлами на диске, память — с картой модулей.");
+        ui::muted(tr("Module code is compared with its files on disk, memory with the module map.",
+                     "Код модулей сравнивается с их файлами на диске, память — с картой модулей."));
         return;
     }
     if (!findings.has_report()) {
-        ui::progress_bar(0.0f, "Ожидание");
-        ui::muted("Нажмите «Проверить» или F5, чтобы поискать внедрённый код и изменения в модулях.");
+        ui::progress_bar(0.0f, tr("Waiting", "Ожидание"));
+        ui::muted(tr("Press «Check» or F5 to look for injected code and changes in modules.",
+                     "Нажмите «Проверить» или F5, чтобы поискать внедрённый код и изменения в модулях."));
         return;
     }
     const InspectReport& report = findings.report();
-    ui::progress_bar(1.0f, report.complete ? "Готово" : "Остановлено");
+    ui::progress_bar(1.0f, report.complete ? tr("Done", "Готово") : tr("Stopped", "Остановлено"));
     const std::initializer_list<std::pair<const char*, std::string>> parts = {
-        {"Находок", group_digits(report.findings.size())},
-        {"Модулей", group_digits(report.stats.modules)},
-        {"Сравнено кода", format_size(report.stats.code_bytes)},
-        {"Без изменений", format_size(report.stats.shared_bytes)}};
+        {tr("Findings", "Находок"), group_digits(report.findings.size())},
+        {tr("Modules", "Модулей"), group_digits(report.stats.modules)},
+        {tr("Code compared", "Сравнено кода"), format_size(report.stats.code_bytes)},
+        {tr("Unchanged", "Без изменений"), format_size(report.stats.shared_bytes)}};
     bool first = true;
     for (const auto& [label, value] : parts) {
         if (!first) {
@@ -135,14 +149,16 @@ void View::draw_inspect_progress(const Job* running) {
         ui::muted(label);
         ImGui::SameLine();
         ui::text(value);
-        if (std::string_view(label) == "Без изменений") {
-            ImGui::SetItemTooltip("Страницы кода, которые Windows по-прежнему делит с файлом модуля: в них никто не писал, и их "
-                                  "не нужно сравнивать");
+        if (std::string_view(label) == tr("Unchanged", "Без изменений")) {
+            ImGui::SetItemTooltip("%s", tr("Code pages Windows still shares with the module's file: nobody wrote to them, and they "
+                                           "need not be compared",
+                                           "Страницы кода, которые Windows по-прежнему делит с файлом модуля: в них никто не писал, и их "
+                                           "не нужно сравнивать"));
         }
     }
     if (!report.warnings.empty()) {
         ImGui::SameLine(0.0f, 24.0f * scale_);
-        ui::muted("Предупреждений");
+        ui::muted(tr("Warnings", "Предупреждений"));
         ImGui::SameLine();
         inverted_text(std::to_string(report.warnings.size()));
         std::string all;
@@ -154,7 +170,7 @@ void View::draw_inspect_progress(const Job* running) {
 }
 
 float View::inspect_bar_width() const {
-    float width = button_width("Проверить") + 20.0f * scale_;
+    float width = button_width(tr("Check", "Проверить")) + 20.0f * scale_;
     for (const FindingKind kind : kKinds) {
         width += button_width(kind_toggle(session_.findings(), kind).c_str());
     }
@@ -163,10 +179,11 @@ float View::inspect_bar_width() const {
 
 void View::draw_inspect_bar(float right_edge) {
     FindingList& findings = session_.findings();
-    if (ui::button("Проверить", session_.job() == nullptr && alive_)) {
+    if (ui::button(tr("Check", "Проверить"), session_.job() == nullptr && alive_)) {
         start_inspect();
     }
-    ImGui::SetItemTooltip("Найти внедрённый код и изменения в модулях. MemHunter только читает память.  F5");
+    ImGui::SetItemTooltip("%s", tr("Find injected code and changes in modules. MemHunter only reads memory.  F5",
+                                   "Найти внедрённый код и изменения в модулях. MemHunter только читает память.  F5"));
     bool first = true;
     for (const FindingKind kind : kKinds) {
         const std::string label = kind_toggle(findings, kind);
@@ -180,7 +197,7 @@ void View::draw_inspect_bar(float right_edge) {
             findings.toggle(kind);
             scroll_to_selection_ = true;
         }
-        wrapped_tooltip(std::string(kind_explanation(kind)) + "\n\nЩелчок прячет или показывает этот вид.", scale_);
+        wrapped_tooltip(std::string(kind_explanation(kind)) + tr("\n\nA click hides or shows this kind.", "\n\nЩелчок прячет или показывает этот вид."), scale_);
     }
 }
 
@@ -190,17 +207,21 @@ void View::draw_inspect_table(float height) {
         ImGui::BeginChild("##no_findings", ImVec2(0, height), ImGuiChildFlags_Borders, kPanel);
         const Job* job = session_.job();
         if (job != nullptr && job->kind() == JobKind::Inspect) {
-            ui::muted("Идёт проверка…");
+            ui::muted(tr("Checking…", "Идёт проверка…"));
         } else if (!findings.has_report()) {
-            ui::muted_wrapped("Здесь будут находки: исполняемая память вне модулей, PE-заголовки в обычной памяти, память RWX, "
-                              "изменённый код модулей и подменённые модули. Нажмите «Проверить» или F5.");
+            ui::muted_wrapped(tr("Here will be findings: executable memory outside modules, PE headers in ordinary memory, RWX memory, "
+                                 "changed module code, and replaced modules. Press «Check» or F5.",
+                                 "Здесь будут находки: исполняемая память вне модулей, PE-заголовки в обычной памяти, память RWX, "
+                                 "изменённый код модулей и подменённые модули. Нажмите «Проверить» или F5."));
             ImGui::Spacing();
-            ui::muted_wrapped("Чужие процессы и службы открываются с отметкой «Права отладки» в окне выбора процесса, если "
-                              "MemHunter запущен от имени администратора.");
+            ui::muted_wrapped(tr("Other users' processes and services open with the «Debug privilege» mark in the process picker, if "
+                                 "MemHunter is run as administrator.",
+                                 "Чужие процессы и службы открываются с отметкой «Права отладки» в окне выбора процесса, если "
+                                 "MemHunter запущен от имени администратора."));
         } else if (findings.report().findings.empty()) {
-            ui::text("Ничего подозрительного не найдено.");
+            ui::text(tr("Nothing suspicious found.", "Ничего подозрительного не найдено."));
         } else {
-            ui::muted("Все находки скрыты: включите их виды над таблицей.");
+            ui::muted(tr("All findings are hidden: turn on their kinds above the table.", "Все находки скрыты: включите их виды над таблицей."));
         }
         ImGui::EndChild();
         return;
@@ -221,11 +242,11 @@ void View::draw_inspect_table(float height) {
     if (!ImGui::BeginTable("##findings", 5, flags, ImVec2(0, height))) {
         return;
     }
-    ImGui::TableSetupColumn("Адрес", 0, font_text_width(fonts_.mono, "0x0000000000000000"));
-    ImGui::TableSetupColumn("Размер", 0, ImGui::CalcTextSize("1023.99 KiB").x);
-    ImGui::TableSetupColumn("Вид", 0, ImGui::CalcTextSize("PE-заголовок").x);
-    ImGui::TableSetupColumn("Где", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-    ImGui::TableSetupColumn("Подробности", ImGuiTableColumnFlags_WidthStretch, 2.4f);
+    ImGui::TableSetupColumn(tr("Address", "Адрес"), 0, font_text_width(fonts_.mono, "0x0000000000000000"));
+    ImGui::TableSetupColumn(tr("Size", "Размер"), 0, ImGui::CalcTextSize("1023.99 KiB").x);
+    ImGui::TableSetupColumn(tr("Kind", "Вид"), 0, ImGui::CalcTextSize("PE-заголовок").x);
+    ImGui::TableSetupColumn(tr("Where", "Где"), ImGuiTableColumnFlags_WidthStretch, 1.0f);
+    ImGui::TableSetupColumn(tr("Details", "Подробности"), ImGuiTableColumnFlags_WidthStretch, 2.4f);
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableHeadersRow();
 
@@ -255,14 +276,14 @@ void View::draw_inspect_table(float height) {
                 findings.select_row(index);
             }
             if (ImGui::BeginPopupContextItem("##menu")) {
-                if (ImGui::MenuItem("Копировать адрес", "Ctrl+C")) {
+                if (ImGui::MenuItem(tr("Copy address", "Копировать адрес"), "Ctrl+C")) {
                     copy_address(finding.address);
                 }
-                if (ImGui::MenuItem("Копировать подробности")) {
+                if (ImGui::MenuItem(tr("Copy details", "Копировать подробности"))) {
                     ImGui::SetClipboardText(finding.details.c_str());
-                    session_.set_notice("Подробности скопированы", false);
+                    session_.set_notice(tr("Details copied", "Подробности скопированы"), false);
                 }
-                if (ImGui::MenuItem("Дизассемблировать")) {
+                if (ImGui::MenuItem(tr("Disassemble", "Дизассемблировать"))) {
                     disassemble_at(finding.address);
                 }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
@@ -306,12 +327,12 @@ void View::draw_inspect_table(float height) {
 }
 
 void View::draw_finding_info(const Finding& finding, float value_x) {
-    ui::heading(fonts_.heading, "НАХОДКА");
-    ui::field("Адрес", format_address(finding.address), value_x, fonts_.mono);
-    ui::field("Размер", finding.size == 0 ? std::string("—") : format_size(finding.size), value_x);
-    ui::field("Вид", std::string(kind_label(finding.kind)) + "   " + std::string(to_string(finding.kind)), value_x);
-    ui::field("Где", finding.where.empty() ? std::string_view("—") : std::string_view(finding.where), value_x, fonts_.mono);
-    ui::field("Подробности", finding.details, value_x);
+    ui::heading(fonts_.heading, tr("FINDING", "НАХОДКА"));
+    ui::field(tr("Address", "Адрес"), format_address(finding.address), value_x, fonts_.mono);
+    ui::field(tr("Size", "Размер"), finding.size == 0 ? std::string("—") : format_size(finding.size), value_x);
+    ui::field(tr("Kind", "Вид"), std::string(kind_label(finding.kind)) + "   " + std::string(to_string(finding.kind)), value_x);
+    ui::field(tr("Where", "Где"), finding.where.empty() ? std::string_view("—") : std::string_view(finding.where), value_x, fonts_.mono);
+    ui::field(tr("Details", "Подробности"), finding.details, value_x);
     ImGui::Spacing();
     ui::muted_wrapped(kind_explanation(finding.kind));
 }

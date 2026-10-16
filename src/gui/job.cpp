@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "common/error.hpp"
+#include "gui/lang.hpp"
 #include "snapshot/capture.hpp"
 #include "snapshot/diff.hpp"
 
@@ -79,7 +80,8 @@ Job::Work changed_scan_work(const MemorySource& memory, ProcessSummary process, 
                std::stop_token stop, JobProgress& progress) mutable {
         if (!same_process_instance(baseline->process, process)) {
             throw Error(ErrorCode::IncompatibleSnapshot,
-                        "Запомненная память относится к другому запуску процесса. Запомните память заново.");
+                        tr("The remembered memory belongs to a different run of the process. Remember the memory again.",
+                           "Запомненная память относится к другому запуску процесса. Запомните память заново."));
         }
         progress.stage.store(JobStage::Hashing, std::memory_order_relaxed);
         ScanPlan plan = plan_scan(memory, request.filter);
