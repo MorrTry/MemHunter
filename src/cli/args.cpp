@@ -937,6 +937,70 @@ InspectArgs parse_inspect_options(std::vector<std::string> args) {
     return options;
 }
 
+namespace {
+
+std::uint64_t parse_hex_address(std::string_view text) {
+    std::string_view digits = trim(text);
+    if (digits.size() > 2 && digits[0] == '0' && (digits[1] == 'x' || digits[1] == 'X')) {
+        digits.remove_prefix(2);
+    }
+    std::uint64_t value = 0;
+    const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), value, 16);
+    if (digits.empty() || error != std::errc{} || end != digits.data() + digits.size()) {
+        invalid("the address is hexadecimal, e.g. 0x7FF6A0001000, got '" + std::string(text) + "'");
+    }
+    return value;
+}
+
+}  // namespace
+
+DisasmArgs parse_disasm_options(std::vector<std::string> args) {
+    DisasmArgs options;
+    ArgReader reader(std::move(args));
+    std::vector<std::string> positionals;
+    bool count_given = false;
+    while (!reader.done()) {
+        const auto option = reader.next_option();
+        if (!option) {
+            if (!reader.done()) {
+                positionals.push_back(reader.positional());
+            }
+            continue;
+        }
+        const std::string& o = *option;
+        if (o == "-n" || o == "--count") {
+            options.count = static_cast<std::size_t>(reader.uint_value(1, 100000));
+            count_given = true;
+        } else if (o == "--bytes") {
+            options.bytes = reader.size_value(1, std::uint64_t{16} << 20);
+            options.bytes_given = true;
+        } else if (o == "-f" || o == "--format") {
+            options.format = parse_format(reader.value());
+        } else if (o == "-o" || o == "--output") {
+            options.path = reader.value();
+            if (options.path.empty()) {
+                invalid("--output needs a file name");
+            }
+        } else if (o == "-q" || o == "--quiet") {
+            reader.flag();
+            options.quiet = true;
+        } else {
+            reader.unknown();
+        }
+    }
+    if (count_given && options.bytes_given) {
+        invalid("give either --count or --bytes, not both");
+    }
+    if (positionals.size() != 2) {
+        invalid(positionals.empty()      ? "missing target process: give a PID or an executable name"
+                : positionals.size() == 1 ? "missing address: give it in hexadecimal, e.g. 0x7FF6A0001000"
+                                          : "unexpected argument '" + positionals[2] + "'");
+    }
+    options.target = positionals[0];
+    options.address = parse_hex_address(positionals[1]);
+    return options;
+}
+
 bool take_debug_privilege(std::vector<std::string>& args) {
     const auto end = std::find(args.begin(), args.end(), "--");
     const auto removed = std::remove(args.begin(), end, "--debug-privilege");

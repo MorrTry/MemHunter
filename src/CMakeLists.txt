@@ -1,3 +1,22 @@
+# Zydis gives the disassembler its decoder. Fetched by git so its Zycore submodule comes with it; the download runs
+# in-process (CMP0168 NEW) because a sub-build through cmd.exe garbles the non-ASCII build path.
+if(POLICY CMP0168)
+  cmake_policy(SET CMP0168 NEW)
+endif()
+set(ZYDIS_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(ZYDIS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(ZYDIS_BUILD_DOXYGEN OFF CACHE BOOL "" FORCE)
+set(ZYDIS_BUILD_SHARED_LIB OFF CACHE BOOL "" FORCE)
+# Zycore calls find_package(Doxygen) unconditionally and the toolchain's Doxygen aborts without Graphviz; we build no
+# docs, so hide the package.
+set(CMAKE_DISABLE_FIND_PACKAGE_Doxygen ON)
+include(FetchContent)
+FetchContent_Declare(zydis
+  GIT_REPOSITORY https://github.com/zyantific/zydis.git
+  GIT_TAG v4.1.1
+  GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(zydis)
+
 add_library(memhunter_core STATIC
   common/error.cpp
   common/text.cpp
@@ -38,9 +57,10 @@ add_library(memhunter_core STATIC
   inspect/pe_image.cpp
   inspect/inspect.cpp
   inspect/process_inspect.cpp
+  disasm/disassembler.cpp
 )
 target_include_directories(memhunter_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(memhunter_core PUBLIC memhunter_options psapi advapi32)
+target_link_libraries(memhunter_core PUBLIC memhunter_options psapi advapi32 PRIVATE Zydis)
 
 add_library(memhunter_tui STATIC
   tui/screen.cpp
@@ -62,6 +82,7 @@ add_library(memhunter_gui_model STATIC
   gui/watch_list.cpp
   gui/pointer_list.cpp
   gui/finding_list.cpp
+  gui/disasm_table.cpp
   gui/struct_table.cpp
   gui/process_picker.cpp
   gui/job.cpp

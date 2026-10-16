@@ -434,6 +434,10 @@ void View::draw_struct_table(float height) {
                 if (ImGui::MenuItem("Разобрать отсюда", nullptr, false, field.type == FieldType::Pointer)) {
                     dissect_row = index;
                 }
+                const std::optional<std::uint64_t> field_address = structure.field_address(index, 0);
+                if (ImGui::MenuItem("Дизассемблировать", nullptr, false, field_address.has_value())) {
+                    disassemble_at(*field_address);
+                }
                 ImGui::Separator();
                 if (ImGui::MenuItem("В список адресов", "Insert")) {
                     watch_row = index;

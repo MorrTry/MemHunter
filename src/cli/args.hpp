@@ -185,6 +185,20 @@ struct InspectArgs {
     bool quiet = false;
 };
 
+inline constexpr std::size_t kDefaultDisasmCount = 32;
+
+// Disassembles machine code from an address: either a count of instructions or a span of bytes.
+struct DisasmArgs {
+    std::string target;
+    std::uint64_t address = 0;
+    std::size_t count = kDefaultDisasmCount;
+    std::uint64_t bytes = 0;
+    bool bytes_given = false;
+    OutputFormat format = OutputFormat::Text;
+    std::string path;
+    bool quiet = false;
+};
+
 ScanOptions parse_scan_options(std::vector<std::string> args);
 RegionsOptions parse_regions_options(std::vector<std::string> args);
 PsOptions parse_ps_options(std::vector<std::string> args);
@@ -196,6 +210,7 @@ ValueOptions parse_value_options(std::vector<std::string> args);
 PointerOptions parse_pointer_options(std::vector<std::string> args);
 StructOptions parse_struct_options(std::vector<std::string> args);
 InspectArgs parse_inspect_options(std::vector<std::string> args);
+DisasmArgs parse_disasm_options(std::vector<std::string> args);
 
 // Removes every --debug-privilege before a "--" and tells whether there was one.
 bool take_debug_privilege(std::vector<std::string>& args);

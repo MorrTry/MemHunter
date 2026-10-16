@@ -273,7 +273,7 @@ bool View::can_export() const {
         return !session_.watch().empty();
     }
     // Chains and structures are saved by their own buttons, in files MemHunter can load back.
-    if (page_ == Page::Pointers || page_ == Page::Structure || page_ == Page::Inspect || session_.busy()) {
+    if (page_ == Page::Pointers || page_ == Page::Structure || page_ == Page::Inspect || page_ == Page::Disasm || session_.busy()) {
         return false;
     }
     return value_mode() ? !session_.values().rows().empty() : session_.table().has_results();
@@ -335,6 +335,8 @@ void View::handle_shortcuts() {
     if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
         if (page_ == Page::Inspect) {
             start_inspect();
+        } else if (page_ == Page::Disasm) {
+            run_disasm();
         } else {
             start_scan();
         }
@@ -363,7 +365,7 @@ void View::handle_shortcuts() {
     }
     const bool copy = ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_C);
     if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_D) && page_ != Page::Regions && page_ != Page::Structure &&
-        page_ != Page::Inspect) {
+        page_ != Page::Inspect && page_ != Page::Disasm) {
         open_struct_from_selection();
         return;
     }
@@ -373,6 +375,10 @@ void View::handle_shortcuts() {
     }
     if (page_ == Page::Inspect) {
         handle_inspect_shortcuts(copy);
+        return;
+    }
+    if (page_ == Page::Disasm) {
+        handle_disasm_shortcuts(copy);
         return;
     }
     if (value_mode()) {
@@ -909,6 +915,8 @@ void View::draw_progress_panel() {
         draw_pointer_summary();
     } else if ((running != nullptr && running->kind() == JobKind::Inspect) || (running == nullptr && page_ == Page::Inspect)) {
         draw_inspect_progress(running);
+    } else if (running == nullptr && page_ == Page::Disasm) {
+        draw_disasm_progress();
     } else if (const Job* job = running) {
         const ScanProgress& progress = job->progress().current();
         const std::uint64_t bytes_total = progress.bytes_total.load(std::memory_order_relaxed);
@@ -1064,6 +1072,13 @@ void View::draw_page_switch() {
         scroll_to_selection_ = true;
     }
     ImGui::SetItemTooltip("Поиск внедрённого кода: память вне модулей, RWX, PE-заголовки, изменённый код и подмена модулей");
+    ImGui::SameLine(0.0f, 0.0f);
+    if (segment("Дизасм", page_ == Page::Disasm)) {
+        page_ = Page::Disasm;
+        scroll_to_selection_ = true;
+        disasm_focus_ = !session_.disasm().has_result();
+    }
+    ImGui::SetItemTooltip("Дизассемблировать машинный код по адресу: x86-64 и x86, Intel-синтаксис");
 
     const float filter_min = 150.0f * scale_;
     const float preview_width = std::floor(60.0f * scale_);
@@ -1083,6 +1098,8 @@ void View::draw_page_switch() {
         bar = buttons_width({"Проверить…", "Сохранить…", "Загрузить…", "Очистить"});
     } else if (page_ == Page::Inspect) {
         bar = inspect_bar_width();
+    } else if (page_ == Page::Disasm) {
+        bar = disasm_bar_width();
     } else if (page_ == Page::Structure) {
         bar = buttons_width({"Открыть…", "Сравнить…", "Сохранить…", "Загрузить…"});
     } else if (page_ == Page::Results) {
@@ -1104,6 +1121,8 @@ void View::draw_page_switch() {
         draw_struct_bar(right_edge);
     } else if (page_ == Page::Inspect) {
         draw_inspect_bar(right_edge);
+    } else if (page_ == Page::Disasm) {
+        draw_disasm_bar(right_edge);
     } else if (page_ == Page::Results && value_mode()) {
         const char* hint = "«Сейчас» обновляется дважды в секунду, рамка — значение изменилось";
         const float hint_width = ImGui::CalcTextSize(hint).x;
@@ -1204,6 +1223,8 @@ void View::draw_results(float height) {
         draw_struct_table(table_height);
     } else if (page_ == Page::Inspect) {
         draw_inspect_table(table_height);
+    } else if (page_ == Page::Disasm) {
+        draw_disasm_table(table_height);
     } else if (value_mode()) {
         draw_value_table(table_height);
     } else {
@@ -1322,6 +1343,9 @@ void View::draw_results_table(float height) {
                 }
                 if (ImGui::MenuItem("Разобрать структуру…", "Ctrl+D")) {
                     open_struct_from_selection();
+                }
+                if (ImGui::MenuItem("Дизассемблировать")) {
+                    disassemble_at(match.address);
                 }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
                     ImGui::CloseCurrentPopup();
@@ -1465,6 +1489,9 @@ void View::draw_value_table(float height) {
                 if (ImGui::MenuItem("Разобрать структуру…", "Ctrl+D")) {
                     open_struct_from_selection();
                 }
+                if (ImGui::MenuItem("Дизассемблировать")) {
+                    disassemble_at(value.address);
+                }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
                     ImGui::CloseCurrentPopup();
                 }
@@ -1562,17 +1589,21 @@ void View::draw_details(float height) {
     const bool pointer_page = page_ == Page::Pointers;
     const bool struct_page = page_ == Page::Structure;
     const bool inspect_page = page_ == Page::Inspect;
-    const bool result_page = !watch_page && !pointer_page && !struct_page && !inspect_page;
+    const bool disasm_page = page_ == Page::Disasm;
+    const bool result_page = !watch_page && !pointer_page && !struct_page && !inspect_page && !disasm_page;
     const StructTable& structure = session_.structure();
     const std::optional<std::size_t> watch_row = watch_page ? watch.selected_row() : std::nullopt;
     const std::optional<std::size_t> pointer_row = pointer_page ? pointers.selected_row() : std::nullopt;
     const std::optional<std::size_t> struct_row = struct_page && structure.active() ? structure.selected_row() : std::nullopt;
     const Finding* finding = inspect_page ? session_.findings().selected() : nullptr;
+    const DisasmLine* line = disasm_page ? session_.disasm().selected() : nullptr;
     const ValueCandidate* value = result_page && value_mode() ? values.selected() : nullptr;
     std::optional<Match> match;
     if (finding != nullptr) {
         match = Match{.address = finding->address,
                       .length = static_cast<std::uint32_t>(std::min<std::uint64_t>(finding->size, UINT32_MAX))};
+    } else if (line != nullptr) {
+        match = Match{.address = line->address, .length = line->size};
     } else if (watch_row) {
         const WatchEntry& entry = watch.rows()[*watch_row];
         match = Match{.address = entry.address, .length = static_cast<std::uint32_t>(entry.size())};
@@ -1616,6 +1647,9 @@ void View::draw_details(float height) {
         } else if (inspect_page) {
             ui::muted(session_.findings().rows().empty() ? "Здесь будет находка, её подробности и память по её адресу."
                                                          : "Выберите строку в таблице.");
+        } else if (disasm_page) {
+            ui::muted(session_.disasm().rows().empty() ? "Здесь будут подробности инструкции и память по её адресу."
+                                                       : "Выберите строку в таблице.");
         } else if (value_mode()) {
             ui::muted(values.has_values() ? "Выберите строку в таблице." : "Здесь будет адрес, его значение и память вокруг него.");
         } else {
@@ -1636,6 +1670,8 @@ void View::draw_details(float height) {
     ImGui::AlignTextToFramePadding();
     if (finding != nullptr) {
         draw_finding_info(*finding, value_x);
+    } else if (line != nullptr) {
+        draw_disasm_info(*line, value_x);
     } else if (watch_row) {
         draw_watch_info(*watch_row, value_x);
     } else if (pointer_row) {
@@ -1933,6 +1969,7 @@ void View::draw_status_bar() {
                         : page_ == Page::Pointers  ? "Insert в список адресов    Ctrl+C цепочка    Ctrl+D структура    Ctrl+S сохранить"
                         : page_ == Page::Structure ? "F2 поле    Del сбросить    → ← раскрыть    Insert в список адресов    Ctrl+C адрес"
                         : page_ == Page::Inspect   ? "F5 проверить    Esc стоп    Ctrl+C адрес"
+                        : page_ == Page::Disasm    ? "F5 обновить    Ctrl+C адрес    Ctrl+B байты    Ctrl+T текст"
                         : value_mode()            ? "F5 искать    Esc стоп    Insert в список    Ctrl+C адрес    Ctrl+S экспорт"
                                                   : "F5 найти    Esc стоп    Ctrl+F фильтр    Insert в список    Ctrl+S экспорт";
     const float hints_width = ImGui::CalcTextSize(hints).x;

@@ -243,6 +243,9 @@ void View::draw_pointer_table(float height) {
                 if (ImGui::MenuItem("Разобрать структуру…", "Ctrl+D")) {
                     open_struct_from_selection();
                 }
+                if (ImGui::MenuItem("Дизассемблировать", nullptr, false, address.has_value())) {
+                    disassemble_at(*address);
+                }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
                     ImGui::CloseCurrentPopup();
                 }

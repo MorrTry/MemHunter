@@ -286,7 +286,56 @@ void write_inspection_csv(std::ostream& out, const InspectListing& listing) {
     }
 }
 
+void write_disasm_text(std::ostream& out, const DisasmListing& listing) {
+    std::size_t bytes_width = 7;
+    for (const DisasmRow& row : listing.rows) {
+        bytes_width = std::max(bytes_width, row.bytes.size() + 2);
+    }
+    out << fit_width("ADDRESS", 20) << fit_width("BYTES", bytes_width) << "INSTRUCTION\n";
+    for (const DisasmRow& row : listing.rows) {
+        out << fit_width(format_address(row.address), 20) << fit_width(row.bytes, bytes_width) << row.text;
+        if (!row.target_module.empty()) {
+            out << "  <" << row.target_module << '>';
+        }
+        out << '\n';
+    }
+}
+
+void write_disasm_json(std::ostream& out, const DisasmListing& listing) {
+    const ProcessSummary& process = listing.process;
+    out << "{\n  \"process\": {\"pid\": " << process.pid << ", \"name\": \"" << json_escape(process.name) << "\", \"path\": \""
+        << json_escape(process.path) << "\", \"wow64\": " << (process.wow64 ? "true" : "false") << "},\n  \"address\": \""
+        << format_address(listing.address) << "\",\n  \"bits\": " << (listing.wow64 ? 32 : 64) << ",\n  \"instructions\": [";
+    bool first = true;
+    for (const DisasmRow& row : listing.rows) {
+        out << (first ? "\n" : ",\n") << "    {\"address\": \"" << format_address(row.address) << "\", \"bytes\": \"" << row.bytes
+            << "\", \"text\": \"" << json_escape(row.text) << "\", \"valid\": " << (row.valid ? "true" : "false");
+        if (!row.target_module.empty()) {
+            out << ", \"target\": \"" << json_escape(row.target_module) << '"';
+        }
+        out << '}';
+        first = false;
+    }
+    out << (first ? "]\n}\n" : "\n  ]\n}\n");
+}
+
+void write_disasm_csv(std::ostream& out, const DisasmListing& listing) {
+    out << "address,bytes,instruction,target\r\n";
+    for (const DisasmRow& row : listing.rows) {
+        out << format_address(row.address) << ',' << csv_field(row.bytes) << ',' << csv_field(row.text) << ','
+            << csv_field(row.target_module) << "\r\n";
+    }
+}
+
 }  // namespace
+
+void write_disasm(std::ostream& out, OutputFormat format, const DisasmListing& listing) {
+    switch (format) {
+        case OutputFormat::Text: write_disasm_text(out, listing); break;
+        case OutputFormat::Json: write_disasm_json(out, listing); break;
+        case OutputFormat::Csv: write_disasm_csv(out, listing); break;
+    }
+}
 
 void write_inspection(std::ostream& out, OutputFormat format, const InspectListing& listing) {
     switch (format) {

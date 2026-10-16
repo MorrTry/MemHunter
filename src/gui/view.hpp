@@ -33,7 +33,7 @@ public:
     virtual void set_title(const std::string& title) = 0;
 };
 
-enum class Page : std::uint8_t { Results, Regions, Watch, Pointers, Structure, Inspect };
+enum class Page : std::uint8_t { Results, Regions, Watch, Pointers, Structure, Inspect, Disasm };
 
 // Draws the whole window once per frame and turns clicks and shortcuts into Session calls. All presentation
 // lives here and in theme/widgets; scanning stays in Session.
@@ -145,6 +145,16 @@ private:
     void draw_inspect_table(float height);
     void draw_finding_info(const Finding& finding, float value_x);
 
+    // Machine code; drawn in disasm_view.cpp.
+    void disassemble_at(std::uint64_t address);
+    void run_disasm();
+    void handle_disasm_shortcuts(bool copy);
+    void draw_disasm_progress();
+    float disasm_bar_width() const;
+    void draw_disasm_bar(float right_edge);
+    void draw_disasm_table(float height);
+    void draw_disasm_info(const DisasmLine& line, float value_x);
+
     Session& session_;
     Platform& platform_;
     const theme::Fonts& fonts_;
@@ -227,6 +237,11 @@ private:
     std::string instance_base_;
     std::string struct_resize_;
     bool struct_resizing_ = false;
+
+    std::string disasm_address_;
+    int disasm_count_ = 48;
+    bool disasm_focus_ = false;
+    std::string disasm_error_;
 };
 
 }  // namespace mh::gui

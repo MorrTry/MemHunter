@@ -8,6 +8,7 @@
 #include <ostream>
 
 #include "common/text.hpp"
+#include "disasm/disassembler.hpp"
 #include "inspect/process_inspect.hpp"
 #include "memory/process_memory.hpp"
 #include "pointer/pointer_file.hpp"
@@ -286,6 +287,7 @@ void Session::attach(std::unique_ptr<Target> target) {
     value_run_ = {};
     history_.clear();
     findings_.clear();
+    disasm_.clear();
     target_ = std::move(target);
     if (target_) {
         refresh_modules();
@@ -543,6 +545,54 @@ void Session::finish_inspect(std::optional<InspectReport> report, double seconds
     } else {
         set_notice("Проверка за " + format_seconds(seconds) + ": " + count_findings(count), false);
     }
+}
+
+bool Session::disassemble(std::uint64_t address, std::size_t count) {
+    if (!target_) {
+        set_notice("Сначала выберите процесс", true);
+        return false;
+    }
+    if (job_) {
+        return false;
+    }
+    notice_ = {};
+    const MemorySource& memory = target_->memory();
+    DisasmOptions decode;
+    decode.wow64 = target_->summary().wow64;
+    std::vector<Instruction> instructions;
+    std::vector<Region> regions;
+    try {
+        instructions = mh::disassemble(memory, address, count, decode);
+        regions = memory.query_regions();
+    } catch (const Error& error) {
+        set_notice(describe_error(error), true);
+        return false;
+    }
+    const ModuleMap modules(regions);
+    std::vector<DisasmLine> lines;
+    lines.reserve(instructions.size());
+    for (const Instruction& instruction : instructions) {
+        DisasmLine line;
+        line.address = instruction.address;
+        line.bytes = hex_preview(instruction.bytes);
+        line.size = static_cast<std::uint8_t>(instruction.bytes.size());
+        line.text = instruction.text;
+        line.valid = instruction.valid;
+        line.has_target = instruction.has_target;
+        line.target_address = instruction.target;
+        if (instruction.has_target) {
+            if (const Module* module = modules.locate(instruction.target)) {
+                line.target = module->name + "+" + format_hex(instruction.target - module->base);
+            }
+        }
+        lines.push_back(std::move(line));
+    }
+    const bool any = !lines.empty();
+    disasm_.assign(address, decode.wow64, std::move(lines));
+    if (!any) {
+        set_notice("В " + format_address(address) + " нечего читать", true);
+    }
+    return any;
 }
 
 void Session::finish(JobKind kind, JobOutcome outcome, double seconds) {

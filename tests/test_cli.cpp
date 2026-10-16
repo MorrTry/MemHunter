@@ -201,6 +201,38 @@ TEST_F(Cli, RegionsAndProcessList) {
     EXPECT_EQ(memhunter({"ps", "no-such-process-memhunter"}).exit_code, 1u);
 }
 
+TEST_F(Cli, DisassemblesExecutableCode) {
+    const auto regions = memhunter({"regions", pid(), "--protection", "executable", "--type", "image", "-f", "csv"});
+    ASSERT_EQ(regions.exit_code, 0u) << regions.err;
+    std::istringstream rows(regions.out);
+    std::string row;
+    std::getline(rows, row);  // header
+    ASSERT_TRUE(std::getline(rows, row)) << "no executable image region in the test target";
+    const std::string base = row.substr(0, row.find(','));
+
+    const auto text = memhunter({"disasm", pid(), base, "--count", "8"});
+    ASSERT_EQ(text.exit_code, 0u) << text.err;
+    EXPECT_NE(text.out.find("INSTRUCTION"), std::string::npos) << text.out;
+    EXPECT_NE(text.out.find(base), std::string::npos) << text.out;
+
+    const auto json = memhunter({"disasm", pid(), base, "--bytes", "0x20", "-f", "json", "-q"});
+    ASSERT_EQ(json.exit_code, 0u) << json.err;
+    EXPECT_NE(json.out.find("\"instructions\""), std::string::npos) << json.out;
+    EXPECT_NE(json.out.find("\"bits\": 64"), std::string::npos) << json.out;
+
+    // The address is accepted without a 0x prefix too.
+    EXPECT_EQ(memhunter({"disasm", pid(), base.substr(2), "-n", "1", "-q"}).exit_code, 0u);
+}
+
+TEST_F(Cli, DisasmArgumentAndAddressErrors) {
+    EXPECT_EQ(memhunter({"disasm", pid()}).exit_code, 2u);                                      // no address
+    EXPECT_EQ(memhunter({"disasm", pid(), "nothex"}).exit_code, 2u);                            // address is not hex
+    EXPECT_EQ(memhunter({"disasm", pid(), "0x1000", "--count", "0"}).exit_code, 2u);
+    EXPECT_EQ(memhunter({"disasm", pid(), "0x1000", "--count", "3", "--bytes", "8"}).exit_code, 2u);
+    EXPECT_EQ(memhunter({"disasm", "no-such-process-memhunter.exe", "0x1000"}).exit_code, 3u);
+    EXPECT_EQ(memhunter({"disasm", pid(), "0x10", "-q"}).exit_code, 1u);                        // unreadable address
+}
+
 TEST_F(Cli, SnapshotInfoAndDiffOfFiles) {
     const std::string a = utf8(directory_ / "a.mhs");
     const auto snapshot = memhunter({"snapshot", pid(), "-o", a, "--type", "private", "--no-progress"});

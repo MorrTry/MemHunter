@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "common/error.hpp"
+#include "gui/disasm_table.hpp"
 #include "gui/finding_list.hpp"
 #include "gui/job.hpp"
 #include "gui/pointer_list.hpp"
@@ -177,6 +178,12 @@ public:
     // Looks for injected code in the target; the findings replace those of the last inspection when it completes.
     bool start_inspect();
 
+    DisasmTable& disasm() noexcept { return disasm_; }
+    const DisasmTable& disasm() const noexcept { return disasm_; }
+    // Reads and decodes up to `count` instructions at `address`, annotating branch targets with their module.
+    // Runs at once (no job); false and a notice when nothing can be read there.
+    bool disassemble(std::uint64_t address, std::size_t count);
+
     const Notice& notice() const noexcept { return notice_; }
     void set_notice(std::string text, bool error);
 
@@ -211,6 +218,7 @@ private:
     PointerRun pointer_run_;
     StructTable structure_;
     FindingList findings_;
+    DisasmTable disasm_;
     double last_seconds_ = 0;
     Notice notice_;
 };

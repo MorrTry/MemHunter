@@ -18,6 +18,7 @@
 #include "cli/args.hpp"
 #include "cli/listings.hpp"
 #include "common/text.hpp"
+#include "disasm/disassembler.hpp"
 #include "inspect/process_inspect.hpp"
 #include "memory/memory_dump.hpp"
 #include "memory/process_memory.hpp"
@@ -58,6 +59,7 @@ Usage:
   memhunter inspect <pid|name>             look for injected code: executable memory outside modules,
                                            PE headers, RWX memory, patched or replaced modules
   memhunter inspect --all                  the same for every process MemHunter can open
+  memhunter disasm <pid|name> ADDRESS      disassemble the machine code at an address
   memhunter tui <pid|name>                 full-screen interface: scan, browse, filter and save results
   memhunter help [command]                 show help for a command
   memhunter --version
@@ -366,6 +368,29 @@ like pe-sieve and Moneta. Only reads memory. Kinds of findings:
 
 Exit codes: 0 findings, 1 none, 2 invalid arguments, 3 process not found or access denied (or
 --debug-privilege without administrator rights), 4 file error, 5 interrupted; the findings are partial.
+)";
+
+constexpr std::string_view kDisasmHelp = R"(Usage: memhunter disasm <pid|name> ADDRESS [options]
+
+Disassembles the machine code at an address into x86/x64 instructions (Intel syntax, like the disassembler
+of a debugger). Only reads memory. ADDRESS is hexadecimal (0x is optional); a 32-bit process is decoded as
+32-bit code. Find an address first, e.g. with 'memhunter inspect' (a 'patched' finding points at changed
+code) or 'memhunter struct' (a pointer field):
+  memhunter disasm game.exe 0x7FF6A0001000
+  memhunter disasm 1234 7FF6A0001000 --count 40
+  memhunter disasm notepad.exe 0x7FF6A0001000 --bytes 0x80 -f json
+
+      --count N, -n N       number of instructions to show (default 32)
+      --bytes N             disassemble the instructions that start within N bytes instead (suffixes K, M)
+  -f, --format FMT          text (default), json or csv
+  -o, --output FILE         write the listing to FILE instead of standard output
+  -q, --quiet               do not print the summary on stderr
+Each row shows the address, the raw bytes and the instruction; a jump or call into a loaded module is
+annotated with <module+offset>. A byte that does not decode is shown as "db 0xNN". Disassembly stops at
+the first byte that cannot be read. MemHunter only reads memory: it does not patch or assemble code.
+
+Exit codes: 0 shown, 1 nothing could be read at the address, 2 invalid arguments, 3 process not found or
+access denied.
 )";
 
 template <typename Writer>
@@ -1543,6 +1568,51 @@ int inspect_command(std::vector<std::string> args, const ConsoleSession& console
     return found ? kExitSuccess : kExitNoMatches;
 }
 
+int disasm_command(std::vector<std::string> args) {
+    const DisasmArgs options = parse_disasm_options(std::move(args));
+    const Process process = Process::open(resolve_process(options.target));
+    const ProcessMemory memory(process);
+    const ProcessSummary summary = summarize(process);
+    DisasmOptions decode;
+    decode.wow64 = summary.wow64;
+    const std::vector<Instruction> instructions =
+        options.bytes_given ? disassemble_range(memory, options.address, options.bytes, decode)
+                            : disassemble(memory, options.address, options.count, decode);
+    const ModuleMap modules(memory.query_regions());
+
+    DisasmListing listing;
+    listing.process = summary;
+    listing.address = options.address;
+    listing.wow64 = summary.wow64;
+    for (const Instruction& instruction : instructions) {
+        DisasmRow row;
+        row.address = instruction.address;
+        row.bytes = hex_preview(instruction.bytes);
+        row.text = instruction.text;
+        row.valid = instruction.valid;
+        if (instruction.has_target) {
+            if (const Module* module = modules.locate(instruction.target)) {
+                row.target_module = module->name + "+" + format_hex(instruction.target - module->base);
+            }
+        }
+        listing.rows.push_back(std::move(row));
+    }
+    emit(options.path, [&](std::ostream& out) { write_disasm(out, options.format, listing); });
+
+    if (!options.quiet) {
+        if (listing.rows.empty()) {
+            std::cerr << "Nothing can be read at " << format_address(options.address) << '\n';
+        } else {
+            std::cerr << format_address(options.address);
+            if (const Module* module = modules.locate(options.address)) {
+                std::cerr << " (" << module->name << '+' << format_hex(options.address - module->base) << ')';
+            }
+            std::cerr << ": " << listing.rows.size() << (listing.rows.size() == 1 ? " instruction" : " instructions") << '\n';
+        }
+    }
+    return listing.rows.empty() ? kExitNoMatches : kExitSuccess;
+}
+
 int info_command(std::vector<std::string> args) {
     const InfoOptions options = parse_info_options(std::move(args));
     const SnapshotFile file(options.path);
@@ -1577,6 +1647,8 @@ int help_command(const std::vector<std::string>& args) {
         std::cout << kStructHelp;
     } else if (topic == "inspect") {
         std::cout << kInspectHelp;
+    } else if (topic == "disasm") {
+        std::cout << kDisasmHelp;
     } else {
         throw Error(ErrorCode::InvalidArgument, "no help for unknown command '" + topic + "'");
     }
@@ -1662,6 +1734,9 @@ int run(std::vector<std::string> args, const ConsoleSession& console) {
     }
     if (command == "inspect") {
         return inspect_command(std::move(rest), console);
+    }
+    if (command == "disasm") {
+        return disasm_command(std::move(rest));
     }
     if (command == "tui") {
         return tui_command(std::move(rest));

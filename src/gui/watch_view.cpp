@@ -254,6 +254,9 @@ void View::draw_watch_table(float height) {
                 if (ImGui::MenuItem("Разобрать структуру…", "Ctrl+D")) {
                     open_struct_from_selection();
                 }
+                if (ImGui::MenuItem("Дизассемблировать")) {
+                    disassemble_at(entry.address);
+                }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Удалить", "Del")) {
                     remove_row = index;

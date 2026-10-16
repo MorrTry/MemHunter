@@ -262,6 +262,9 @@ void View::draw_inspect_table(float height) {
                     ImGui::SetClipboardText(finding.details.c_str());
                     session_.set_notice("Подробности скопированы", false);
                 }
+                if (ImGui::MenuItem("Дизассемблировать")) {
+                    disassemble_at(finding.address);
+                }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
                     ImGui::CloseCurrentPopup();
                 }

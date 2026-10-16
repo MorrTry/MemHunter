@@ -84,8 +84,25 @@ struct InspectListing {
     bool all = false;
 };
 
+struct DisasmRow {
+    std::uint64_t address = 0;
+    std::string bytes;
+    std::string text;
+    bool valid = true;
+    // "module.dll+0x1234" when a branch or call leads into a loaded module.
+    std::string target_module;
+};
+
+struct DisasmListing {
+    ProcessSummary process;
+    std::uint64_t address = 0;
+    bool wow64 = false;
+    std::vector<DisasmRow> rows;
+};
+
 void write_regions(std::ostream& out, OutputFormat format, const ProcessSummary& process, std::span<const Region> regions);
 void write_inspection(std::ostream& out, OutputFormat format, const InspectListing& listing);
+void write_disasm(std::ostream& out, OutputFormat format, const DisasmListing& listing);
 void write_values(std::ostream& out, OutputFormat format, const ValueListing& listing);
 void write_pointers(std::ostream& out, OutputFormat format, const PointerListing& listing);
 void write_struct(std::ostream& out, OutputFormat format, const StructListing& listing);
